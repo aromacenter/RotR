@@ -11,6 +11,7 @@ import db from './db.js';
 
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
+const SQLiteStore = require('connect-sqlite3')(session);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -21,8 +22,13 @@ const upload = multer({
 });
 
 app.use(express.json());
+const sessionDbPath = process.env.DB_PATH
+  ? dirname(process.env.DB_PATH)
+  : __dirname;
+
 app.use(
   session({
+    store: new SQLiteStore({ dir: sessionDbPath, db: 'sessions.db' }),
     secret: process.env.SESSION_SECRET || 'rota-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
