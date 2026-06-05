@@ -335,78 +335,107 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const promptRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('analysis_prompt');
     const customInstructions = promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT;
 
-    // ── Call 1: structured JSON data ─────────────────────────────────────────
-    const jsonPrompt = `You are a rota scheduling analyst. Analyse the weekly rota schedule below.
-
-## EMPLOYEE DATABASE (${employees.length} employees)
-Match names from the schedule to this list (allow partial/surname-only matches):
-${employeeList}
-
-## WEEKLY PARAMETERS
-- Week: ${weekLabel || 'not specified'}
-- Approved total weekly hours budget: ${weeklyBudget}h
-
-## SCHEDULE PDF TEXT
-${pdfText.substring(0, 10000)}
-
-## OUTPUT
-Return ONLY a valid JSON object. No markdown, no explanation, no code fences.
-Use this exact structure (status must be one of: ok, over, under, not_found):
-{"weekLabel":"${weekLabel.replace(/"/g, '')}","employees":[{"name":"","scheduledHours":0,"contractedHours":0,"difference":0,"status":"ok","shifts":[{"day":"Monday","start":"09:00","end":"17:00","hours":8}]}],"totalScheduledHours":0,"approvedBudget":${weeklyBudget},"budgetStatus":"ok","budgetDifference":0,"violations":[""],"suggestions":[""],"summary":""}`;
+    // ── Call 1: structured data via tool use (guaranteed valid JSON) ──────────
+    const analysisTool = {
+      name: 'submit_rota_analysis',
+      description: 'Submit the structured rota analysis result',
+      input_schema: {
+        type: 'object',
+        properties: {
+          weekLabel: { type: 'string' },
+          totalScheduledHours: { type: 'number' },
+          approvedBudget: { type: 'number' },
+          budgetStatus: { type: 'string', enum: ['ok', 'over', 'under'] },
+          budgetDifference: { type: 'number' },
+          employees: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                scheduledHours: { type: 'number' },
+                contractedHours: { type: 'number' },
+                difference: { type: 'number' },
+                status: { type: 'string', enum: ['ok', 'over', 'under', 'not_found'] },
+                shifts: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      day: { type: 'string' },
+                      start: { type: 'string' },
+                      end: { type: 'string' },
+                      hours: { type: 'number' },
+                    },
+                    required: ['day', 'hours'],
+                  },
+                },
+              },
+              required: ['name', 'scheduledHours', 'contractedHours', 'difference', 'status'],
+            },
+          },
+          violations: { type: 'array', items: { type: 'string' } },
+          suggestions: { type: 'array', items: { type: 'string' } },
+          summary: { type: 'string' },
+        },
+        required: ['employees', 'totalScheduledHours', 'approvedBudget', 'budgetStatus'],
+      },
+    };
 
     const jsonMessage = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 6000,
-      messages: [{ role: 'user', content: jsonPrompt }],
-    });
+      tools: [analysisTool],
+      tool_choice: { type: 'tool', name: 'submit_rota_analysis' },
+      messages: [{
+        role: 'user',
+        content: `Analyse this weekly rota schedule.
 
-    const rawJson = jsonMessage.content[0].text;
-    console.log('JSON response (first 300):', rawJson.substring(0, 300));
-
-    let analysis;
-    try {
-      const stripped = rawJson.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
-      analysis = JSON.parse(jsonMatch ? jsonMatch[0] : stripped);
-    } catch (e) {
-      return res.status(500).json({
-        error: 'Az AI érvénytelen JSON-t adott vissza. Próbáld újra.',
-        detail: e.message,
-        raw: rawJson.substring(0, 800),
-      });
-    }
-
-    // ── Call 2: narrative plain text ──────────────────────────────────────────
-    const narrativePrompt = `You are a rota scheduling analyst. Write a detailed analysis and correction plan for the following weekly rota.
-
-## CUSTOM INSTRUCTIONS
-${customInstructions}
-
-## EMPLOYEE DATABASE
+EMPLOYEES (${employees.length} total – match by surname if needed):
 ${employeeList}
 
-## WEEKLY BUDGET: ${weeklyBudget}h total | Week: ${weekLabel || 'not specified'}
+WEEKLY BUDGET: ${weeklyBudget}h | WEEK: ${weekLabel || 'not specified'}
 
-## ANALYSIS FINDINGS (already computed)
-- Total scheduled hours: ${analysis.totalScheduledHours}h (budget: ${weeklyBudget}h)
-- Budget status: ${analysis.budgetStatus}
-- Violations found: ${(analysis.violations || []).join('; ')}
-- Employees over contracted hours: ${(analysis.employees || []).filter(e => e.status === 'over').map(e => `${e.name} (+${e.difference}h)`).join(', ') || 'none'}
-- Employees under contracted hours: ${(analysis.employees || []).filter(e => e.status === 'under').map(e => `${e.name} (${e.difference}h)`).join(', ') || 'none'}
+SCHEDULE:
+${pdfText.substring(0, 10000)}
 
-## SCHEDULE PDF TEXT
-${pdfText.substring(0, 6000)}
+Use the submit_rota_analysis tool to return the structured result.`,
+      }],
+    });
 
-Write a clear, detailed narrative analysis in plain English (no JSON, no markdown headers, just paragraphs). Include:
-1. What is wrong with the current rota and why
-2. Specific names, days and hours that need changing
-3. Concrete swap/shift change recommendations to fix every issue
-Be direct and actionable. Minimum 200 words.`;
+    const toolUse = jsonMessage.content.find((b) => b.type === 'tool_use');
+    if (!toolUse) {
+      const fallback = jsonMessage.content.find((b) => b.type === 'text');
+      return res.status(500).json({
+        error: 'Az AI nem hívta meg az elemző eszközt. Próbáld újra.',
+        raw: fallback ? fallback.text.substring(0, 500) : 'no text',
+      });
+    }
+    let analysis = toolUse.input;
+    analysis.weekLabel = weekLabel;
+    analysis.approvedBudget = weeklyBudget;
+
+    // ── Call 2: narrative plain text ──────────────────────────────────────────
+    const overList = (analysis.employees || []).filter(e => e.status === 'over').map(e => `${e.name} (+${e.difference}h)`).join(', ') || 'none';
+    const underList = (analysis.employees || []).filter(e => e.status === 'under').map(e => `${e.name} (${e.difference}h)`).join(', ') || 'none';
 
     const narrativeMessage = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
-      messages: [{ role: 'user', content: narrativePrompt }],
+      messages: [{
+        role: 'user',
+        content: `You are a rota scheduling analyst. Write a detailed rota analysis and correction plan.
+
+INSTRUCTIONS: ${customInstructions}
+
+WEEK: ${weekLabel || 'not specified'} | BUDGET: ${weeklyBudget}h
+TOTAL SCHEDULED: ${analysis.totalScheduledHours}h (${analysis.budgetStatus === 'over' ? 'OVER budget by ' + Math.abs(analysis.budgetDifference || 0) + 'h' : 'within budget'})
+OVER contracted: ${overList}
+UNDER contracted: ${underList}
+VIOLATIONS: ${(analysis.violations || []).join('; ') || 'none'}
+
+Write plain English paragraphs (no JSON, no bullet headers). Be specific: name employees, state exact hours, give concrete shift change recommendations. Min 200 words.`,
+      }],
     });
 
     analysis.narrative = narrativeMessage.content[0].text.trim();
