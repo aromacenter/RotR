@@ -177,16 +177,24 @@ Fontos szabályok:
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: '{' },
+      ],
     });
 
-    const responseText = message.content[0].text;
+    const rawResponse = '{' + message.content[0].text;
     let extracted;
     try {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      extracted = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+      extracted = JSON.parse(rawResponse);
     } catch {
-      return res.status(500).json({ error: 'Az AI nem adott vissza érvényes JSON választ', raw: responseText.substring(0, 300) });
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { extracted = JSON.parse(jsonMatch[0]); }
+        catch (e2) { return res.status(500).json({ error: 'Az AI érvénytelen JSON-t adott vissza', raw: rawResponse.substring(0, 400) }); }
+      } else {
+        return res.status(500).json({ error: 'Az AI nem adott vissza JSON választ', raw: rawResponse.substring(0, 400) });
+      }
     }
 
     res.json(extracted);
@@ -305,69 +313,80 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const client = new Anthropic({ apiKey });
 
     const employeeList = employees
-      .map((e) => `- ${e.name}: ${e.contracted_hours} óra/hét`)
+      .map((e) => `- ${e.name} | contracted: ${e.contracted_hours}h/week | area: ${e.area || 'n/a'} | role: ${e.role || 'n/a'}`)
       .join('\n');
 
-    const prompt = `Te egy munkaidő-beosztás elemző rendszer vagy. Elemezd az alábbi heti beosztást és adj visszajelzést.
+    const prompt = `You are a rota scheduling analyst. Analyse the weekly rota schedule below and return a structured JSON report.
 
-ALKALMAZOTTAK ÉS SZERZŐDÉSES ÓRÁIK:
+## EMPLOYEE DATABASE (${employees.length} employees)
+These are ALL known employees. Match names from the schedule to this list (allow partial/surname-only matches):
 ${employeeList}
 
-HETI ENGEDÉLYEZETT ÓRAKERET: ${weeklyBudget} óra összesen
-HETI AZONOSÍTÓ: ${weekLabel || 'nincs megadva'}
+## WEEKLY PARAMETERS
+- Week: ${weekLabel || 'not specified'}
+- Approved total weekly hours budget: ${weeklyBudget}h
+- Analysis rules:
+  * Flag anyone scheduled MORE than their contracted hours (overtime)
+  * Flag anyone scheduled LESS than their contracted hours (undertime)
+  * Flag if total scheduled hours exceed the ${weeklyBudget}h weekly budget
+  * Shifts are typically shown as time ranges (e.g. 09:00-17:00 = 8h) or as hour numbers
 
-A PDF-BŐL KINYERT SZÖVEG:
----
-${pdfText.substring(0, 8000)}
----
+## SCHEDULE PDF TEXT
+${pdfText.substring(0, 10000)}
 
-FELADATOD:
-1. Azonosítsd az alkalmazottakat a beosztásban (névegyeztetés, akár részleges egyezéssel)
-2. Számítsd ki minden alkalmazott tervezett óráit a hétre (műszakidők vagy óraszámok alapján)
-3. Hasonlítsd össze a szerződéses órákkal – ki van alatta/felette
-4. Ellenőrizd, hogy az összesített tervezett óra meghaladja-e a heti engedélyezett keretet (${weeklyBudget} óra)
-5. Listázd a konkrét problémákat
-6. Adj konkrét, megvalósítható javaslatokat a korrigálásra
+## INSTRUCTIONS
+1. Match each employee in the schedule to the database above (use surname matching if needed)
+2. Calculate total scheduled hours per employee for the week
+3. Compare to their contracted hours
+4. Check total vs ${weeklyBudget}h budget
+5. List all violations clearly
+6. Give actionable correction suggestions
 
-VÁLASZOLJ KIZÁRÓLAG ÉRVÉNYES JSON FORMÁTUMBAN, egyéb szöveg nélkül:
-{
-  "weekLabel": "${weekLabel}",
-  "employees": [
-    {
-      "name": "alkalmazott neve",
-      "scheduledHours": 0,
-      "contractedHours": 0,
-      "difference": 0,
-      "status": "ok|over|under|not_found",
-      "shifts": [{"day": "Hétfő", "start": "08:00", "end": "16:00", "hours": 8}]
-    }
-  ],
-  "totalScheduledHours": 0,
-  "approvedBudget": ${weeklyBudget},
-  "budgetStatus": "ok|over|under",
-  "budgetDifference": 0,
-  "violations": ["konkrét probléma leírások"],
-  "suggestions": ["konkrét javaslatok a javításra"],
-  "summary": "rövid összefoglaló 2-3 mondatban"
-}`;
+Return ONLY a raw JSON object (no markdown, no code blocks, no extra text):
+{"weekLabel":"${weekLabel}","employees":[{"name":"exact name from database","scheduledHours":0,"contractedHours":0,"difference":0,"status":"ok","shifts":[{"day":"Monday","start":"09:00","end":"17:00","hours":8}]}],"totalScheduledHours":0,"approvedBudget":${weeklyBudget},"budgetStatus":"ok","budgetDifference":0,"violations":[],"suggestions":[],"summary":""}`;
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 8000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+        {
+          role: 'assistant',
+          content: '{',
+        },
+      ],
     });
 
-    const responseText = message.content[0].text;
+    // Prepend the '{' we used as assistant prefill
+    const rawResponse = '{' + message.content[0].text;
+    console.log('AI raw response (first 200):', rawResponse.substring(0, 200));
 
     let analysis;
     try {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      analysis = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+      // Try direct parse first (assistant prefill guarantees it starts with {)
+      analysis = JSON.parse(rawResponse);
     } catch {
-      return res.status(500).json({
-        error: 'Az AI nem adott vissza érvényes JSON választ',
-        raw: responseText.substring(0, 500),
-      });
+      // Fallback: extract JSON block from response
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          analysis = JSON.parse(jsonMatch[0]);
+        } catch (e2) {
+          return res.status(500).json({
+            error: 'Az AI érvénytelen JSON-t adott vissza. Próbáld újra.',
+            detail: e2.message,
+            raw: rawResponse.substring(0, 800),
+          });
+        }
+      } else {
+        return res.status(500).json({
+          error: 'Az AI nem adott vissza JSON választ. Próbáld újra.',
+          raw: rawResponse.substring(0, 800),
+        });
+      }
     }
 
     db.prepare(
