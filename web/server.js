@@ -441,7 +441,7 @@ Write plain English paragraphs (no JSON, no bullet headers). Be specific: name e
     analysis.narrative = narrativeMessage.content[0].text.trim();
 
     db.prepare(
-      'INSERT INTO analyses (week_label, filename, result_json, created_at) VALUES (?, ?, ?, datetime('now'))'
+      `INSERT INTO analyses (week_label, filename, result_json, created_at) VALUES (?, ?, ?, datetime('now'))`
     ).run(weekLabel, req.file.originalname, JSON.stringify(analysis));
 
     res.json(analysis);
