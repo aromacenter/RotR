@@ -15,6 +15,143 @@ const SQLiteStore = require('connect-sqlite3')(session);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// ─── Workcloud schedule parser ────────────────────────────────────────────────
+
+const DAYS_ORDER = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_PATTERNS = [
+  /\b(0?[0-9]|[12][0-9]|3[01])\s+Jun\s+\(Sun\)/i,
+  /\b(0?[0-9]|[12][0-9]|3[01])\s+Jun\s+\(Mon\)/i,
+  // generic fallback handled below
+];
+
+function timeToHours(start, end) {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let diff = (eh + em / 60) - (sh + sm / 60);
+  if (diff <= 0) diff += 24; // overnight shift
+  return Math.round(diff * 100) / 100;
+}
+
+function parseWorkcloudSchedule(pdfText, dbEmployees) {
+  const lines = pdfText.split('\n').map(l => l.trim());
+
+  // Find column header line to determine date positions
+  // e.g. "07 Jun (Sun) 08 Jun (Mon) 09 Jun (Tue)..."
+  const headerLineIdx = lines.findIndex(l =>
+    /\d{2}\s+\w+\s+\(Sun\)/.test(l) || /\d{2}\s+\w+\s+\(Mon\)/.test(l)
+  );
+
+  // Extract ordered day labels from header
+  let dayLabels = [];
+  if (headerLineIdx >= 0) {
+    const header = lines[headerLineIdx];
+    const dayMatches = [...header.matchAll(/(\d{2}\s+\w{3})\s+\((\w{3})\)/g)];
+    dayLabels = dayMatches.map(m => ({ date: m[1], short: m[2] }));
+  }
+
+  // Employee name pattern: "Lastname, Firstname" or "Lastname-Name, Firstname"
+  const empNameRe = /^([A-Z][a-zA-ZÀ-ÖØ-öø-ÿ\-]+(?:\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+)?,\s*[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+(?:\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+)?)\s*(.*)/;
+  const shiftRe = /(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)]+)\))?/g;
+  const totalHoursRe = /\b(\d{1,3}:\d{2})\s*$/;
+
+  const SECTION_HEADERS = new Set(['management','customer service','floor','replenishment','pricing','cleaning','total scheduled','store hours']);
+
+  const parsed = {}; // name -> { totalHours, shifts: [{day, start, end, hours, code}] }
+
+  let currentName = null;
+  let currentLines = [];
+
+  const flush = () => {
+    if (!currentName) return;
+    const block = currentLines.join(' ');
+
+    // Extract total hours (last standalone HH:MM not followed by dash)
+    const totalMatch = block.match(/\b(\d{1,3}:\d{2})\s*$/);
+    let totalHours = 0;
+    if (totalMatch) {
+      const [h, m] = totalMatch[1].split(':').map(Number);
+      totalHours = h + m / 60;
+    }
+
+    // Extract shifts – we'll assign days based on position in line sequence
+    // Each line that contains a shift time range is one shift
+    const shifts = [];
+    let dayIdx = 0;
+    for (const line of currentLines.slice(1)) { // skip name line
+      if (/Day Off/i.test(line)) { dayIdx++; continue; }
+      const shiftMatches = [...line.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)m][^)]*)\))?/g)];
+      for (const sm of shiftMatches) {
+        const code = sm[3] || '';
+        if (code === 'm') continue; // skip meal breaks
+        const h = timeToHours(sm[1], sm[2]);
+        if (h > 0) {
+          const day = dayLabels[dayIdx]
+            ? `${dayLabels[dayIdx].short} ${dayLabels[dayIdx].date}`
+            : DAYS_ORDER[dayIdx] || `Day${dayIdx + 1}`;
+          shifts.push({ day, start: sm[1], end: sm[2], hours: h, code });
+        }
+        dayIdx++;
+      }
+    }
+
+    parsed[currentName] = { totalHours, shifts };
+    currentName = null;
+    currentLines = [];
+  };
+
+  for (const line of lines) {
+    if (!line) continue;
+    const lower = line.toLowerCase();
+    if (SECTION_HEADERS.has(lower) || /^workcloud/i.test(line) || /^printed on/i.test(line)) {
+      flush();
+      continue;
+    }
+
+    const empMatch = line.match(empNameRe);
+    if (empMatch) {
+      flush();
+      currentName = empMatch[1].trim();
+      currentLines = [line];
+    } else if (currentName) {
+      currentLines.push(line);
+    }
+  }
+  flush();
+
+  // Match parsed entries to DB employees (fuzzy surname match)
+  const result = [];
+  for (const dbEmp of dbEmployees) {
+    const dbSurname = dbEmp.name.split(',')[0]?.trim().toLowerCase() || '';
+    // Try exact match first
+    let match = parsed[dbEmp.name];
+    // Try fuzzy surname match
+    if (!match) {
+      const key = Object.keys(parsed).find(k =>
+        k.toLowerCase() === dbEmp.name.toLowerCase() ||
+        k.split(',')[0]?.trim().toLowerCase() === dbSurname
+      );
+      if (key) match = parsed[key];
+    }
+
+    const scheduled = match?.totalHours ?? 0;
+    const diff = Math.round((scheduled - dbEmp.contracted_hours) * 100) / 100;
+    result.push({
+      name: dbEmp.name,
+      scheduledHours: scheduled,
+      contractedHours: dbEmp.contracted_hours,
+      difference: diff,
+      status: scheduled === 0 ? 'not_found'
+        : diff > 0.25 ? 'over'
+        : diff < -0.25 ? 'under'
+        : 'ok',
+      shifts: match?.shifts || [],
+    });
+  }
+
+  return result;
+}
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -336,106 +473,42 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
 
     const client = new Anthropic({ apiKey });
 
-    const employeeList = employees
-      .map((e) => `- ${e.name} | contracted: ${e.contracted_hours}h/week | area: ${e.area || 'n/a'} | role: ${e.role || 'n/a'}`)
-      .join('\n');
-
     const promptRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('analysis_prompt');
     const customInstructions = promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT;
 
-    // ── Call 1: structured data via tool use (guaranteed valid JSON) ──────────
-    const analysisTool = {
-      name: 'submit_rota_analysis',
-      description: 'Submit the structured rota analysis result',
-      input_schema: {
-        type: 'object',
-        properties: {
-          weekLabel: { type: 'string' },
-          totalScheduledHours: { type: 'number' },
-          approvedBudget: { type: 'number' },
-          budgetStatus: { type: 'string', enum: ['ok', 'over', 'under'] },
-          budgetDifference: { type: 'number' },
-          employees: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                scheduledHours: { type: 'number' },
-                contractedHours: { type: 'number' },
-                difference: { type: 'number' },
-                status: { type: 'string', enum: ['ok', 'over', 'under', 'not_found'] },
-                shifts: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      day: { type: 'string' },
-                      start: { type: 'string' },
-                      end: { type: 'string' },
-                      hours: { type: 'number' },
-                    },
-                    required: ['day', 'hours'],
-                  },
-                },
-              },
-              required: ['name', 'scheduledHours', 'contractedHours', 'difference', 'status'],
-            },
-          },
-          violations: { type: 'array', items: { type: 'string' } },
-          suggestions: { type: 'array', items: { type: 'string' } },
-          summary: { type: 'string' },
-        },
-        required: ['employees', 'totalScheduledHours', 'approvedBudget', 'budgetStatus'],
-      },
+    // ── Step 1: Parse schedule with built-in Workcloud parser (no AI needed) ──
+    const parsedEmployees = parseWorkcloudSchedule(pdfText, employees);
+    const totalScheduled = Math.round(parsedEmployees.reduce((s, e) => s + e.scheduledHours, 0) * 100) / 100;
+    const budgetDiff = Math.round((totalScheduled - weeklyBudget) * 100) / 100;
+    const budgetStatus = budgetDiff > 0.5 ? 'over' : budgetDiff < -0.5 ? 'under' : 'ok';
+
+    const overEmps = parsedEmployees.filter(e => e.status === 'over');
+    const underEmps = parsedEmployees.filter(e => e.status === 'under');
+    const notFound = parsedEmployees.filter(e => e.status === 'not_found');
+
+    const violations = [
+      ...(budgetStatus === 'over' ? [`Total scheduled hours (${totalScheduled}h) exceed weekly budget of ${weeklyBudget}h by ${budgetDiff}h`] : []),
+      ...overEmps.map(e => `${e.name}: scheduled ${e.scheduledHours}h but contracted ${e.contractedHours}h (over by ${e.difference}h)`),
+      ...underEmps.map(e => `${e.name}: scheduled ${e.scheduledHours}h but contracted ${e.contractedHours}h (short by ${Math.abs(e.difference)}h)`),
+    ];
+
+    const analysis = {
+      weekLabel,
+      employees: parsedEmployees,
+      totalScheduledHours: totalScheduled,
+      approvedBudget: weeklyBudget,
+      budgetStatus,
+      budgetDifference: budgetDiff,
+      violations,
+      suggestions: [],
+      summary: `Week ${weekLabel}: ${totalScheduled}h scheduled vs ${weeklyBudget}h budget. ${overEmps.length} over, ${underEmps.length} under contracted hours.`,
     };
 
-    const jsonMessage = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      tools: [analysisTool],
-      tool_choice: { type: 'tool', name: 'submit_rota_analysis' },
-      messages: [{
-        role: 'user',
-        content: `Analyse this Zebra Workcloud weekly rota schedule.
-
-SCHEDULE FORMAT:
-- Each employee row has shifts per day (Sun-Sat) then TOTAL HOURS as the last value
-- Shift format: "HH:MM - HH:MM (CODE)" — area codes: MA=Management, TL=Till, FL=Floor, R=Replenishment, P=Pricing, C=Cleaning
-- "(m)" = meal break within shift, NOT extra hours — ignore for hour calculation
-- Night shifts cross midnight: "20:00 - 07:00" = 11h
-- "Day Off" = not scheduled
-- USE THE TOTAL HOURS COLUMN VALUE directly — it is already calculated by Workcloud
-
-EMPLOYEE DATABASE (match by surname if needed):
-${employeeList}
-
-WEEKLY BUDGET: ${weeklyBudget}h | WEEK: ${weekLabel || 'not specified'}
-
-SCHEDULE TEXT:
-${pdfText.substring(0, 12000)}
-
-For each employee: use their Workcloud Total Hours as scheduledHours, compare to contracted hours.
-For shifts: extract day, start time, end time from the schedule text.
-Use the submit_rota_analysis tool to return the structured result.`,
-      }],
-    });
-
-    const toolUse = jsonMessage.content.find((b) => b.type === 'tool_use');
-    if (!toolUse) {
-      const fallback = jsonMessage.content.find((b) => b.type === 'text');
-      return res.status(500).json({
-        error: 'Az AI nem hívta meg az elemző eszközt. Próbáld újra.',
-        raw: fallback ? fallback.text.substring(0, 500) : 'no text',
-      });
-    }
-    let analysis = toolUse.input;
-    analysis.weekLabel = weekLabel;
-    analysis.approvedBudget = weeklyBudget;
-
-    // ── Call 2: narrative plain text ──────────────────────────────────────────
-    const overList = (analysis.employees || []).filter(e => e.status === 'over').map(e => `${e.name} (+${e.difference}h)`).join(', ') || 'none';
-    const underList = (analysis.employees || []).filter(e => e.status === 'under').map(e => `${e.name} (${e.difference}h)`).join(', ') || 'none';
+    // ── Step 2: AI writes narrative analysis ──────────────────────────────────
+    const empSummary = parsedEmployees
+      .filter(e => e.status !== 'not_found')
+      .map(e => `  ${e.name}: ${e.scheduledHours}h scheduled / ${e.contractedHours}h contracted → ${e.status.toUpperCase()} (${e.difference > 0 ? '+' : ''}${e.difference}h)`)
+      .join('\n');
 
     const narrativeMessage = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -444,19 +517,26 @@ Use the submit_rota_analysis tool to return the structured result.`,
         role: 'user',
         content: `You are a rota scheduling analyst. Write a detailed rota analysis and correction plan.
 
-INSTRUCTIONS: ${customInstructions}
+INSTRUCTIONS:
+${customInstructions}
 
-WEEK: ${weekLabel || 'not specified'} | BUDGET: ${weeklyBudget}h
-TOTAL SCHEDULED: ${analysis.totalScheduledHours}h (${analysis.budgetStatus === 'over' ? 'OVER budget by ' + Math.abs(analysis.budgetDifference || 0) + 'h' : 'within budget'})
-OVER contracted: ${overList}
-UNDER contracted: ${underList}
-VIOLATIONS: ${(analysis.violations || []).join('; ') || 'none'}
+WEEK: ${weekLabel || 'not specified'}
+WEEKLY BUDGET: ${weeklyBudget}h | TOTAL SCHEDULED: ${totalScheduled}h | BUDGET STATUS: ${budgetStatus.toUpperCase()} (${budgetDiff > 0 ? '+' : ''}${budgetDiff}h)
 
-Write plain English paragraphs (no JSON, no bullet headers). Be specific: name employees, state exact hours, give concrete shift change recommendations. Min 200 words.`,
+EMPLOYEE HOUR COMPARISON (parsed from schedule):
+${empSummary}
+
+NOT FOUND IN SCHEDULE (${notFound.length}): ${notFound.map(e => e.name).join(', ') || 'none'}
+
+VIOLATIONS:
+${violations.join('\n') || 'None found.'}
+
+Write plain English paragraphs (no JSON, no markdown headers, no bullet symbols). Be specific: name employees, state exact hours, give concrete shift change or swap recommendations to fix every violation. Minimum 200 words.`,
       }],
     });
 
     analysis.narrative = narrativeMessage.content[0].text.trim();
+    console.log(`Parsed ${parsedEmployees.length} employees. Total: ${totalScheduled}h. Over: ${overEmps.length}, Under: ${underEmps.length}`);
 
     db.prepare(
       `INSERT INTO analyses (week_label, filename, result_json, created_at) VALUES (?, ?, ?, datetime('now'))`
