@@ -177,24 +177,17 @@ Fontos szabályok:
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      messages: [
-        { role: 'user', content: prompt },
-        { role: 'assistant', content: '{' },
-      ],
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    const rawResponse = '{' + message.content[0].text;
+    const rawResponse = message.content[0].text;
     let extracted;
     try {
-      extracted = JSON.parse(rawResponse);
-    } catch {
-      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try { extracted = JSON.parse(jsonMatch[0]); }
-        catch (e2) { return res.status(500).json({ error: 'Az AI érvénytelen JSON-t adott vissza', raw: rawResponse.substring(0, 400) }); }
-      } else {
-        return res.status(500).json({ error: 'Az AI nem adott vissza JSON választ', raw: rawResponse.substring(0, 400) });
-      }
+      const stripped = rawResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      extracted = JSON.parse(jsonMatch ? jsonMatch[0] : stripped);
+    } catch (e) {
+      return res.status(500).json({ error: 'Az AI érvénytelen JSON-t adott vissza', detail: e.message, raw: rawResponse.substring(0, 400) });
     }
 
     res.json(extracted);
@@ -366,45 +359,24 @@ The "narrative" field must be a detailed written analysis in English with specif
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8000,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-        {
-          role: 'assistant',
-          content: '{',
-        },
-      ],
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    // Prepend the '{' we used as assistant prefill
-    const rawResponse = '{' + message.content[0].text;
-    console.log('AI raw response (first 200):', rawResponse.substring(0, 200));
+    const rawResponse = message.content[0].text;
+    console.log('AI raw response (first 300):', rawResponse.substring(0, 300));
 
     let analysis;
     try {
-      // Try direct parse first (assistant prefill guarantees it starts with {)
-      analysis = JSON.parse(rawResponse);
-    } catch {
-      // Fallback: extract JSON block from response
-      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          analysis = JSON.parse(jsonMatch[0]);
-        } catch (e2) {
-          return res.status(500).json({
-            error: 'Az AI érvénytelen JSON-t adott vissza. Próbáld újra.',
-            detail: e2.message,
-            raw: rawResponse.substring(0, 800),
-          });
-        }
-      } else {
-        return res.status(500).json({
-          error: 'Az AI nem adott vissza JSON választ. Próbáld újra.',
-          raw: rawResponse.substring(0, 800),
-        });
-      }
+      // Strip markdown code fences if present
+      const stripped = rawResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      analysis = JSON.parse(jsonMatch ? jsonMatch[0] : stripped);
+    } catch (e) {
+      return res.status(500).json({
+        error: 'Az AI érvénytelen JSON-t adott vissza. Próbáld újra.',
+        detail: e.message,
+        raw: rawResponse.substring(0, 800),
+      });
     }
 
     db.prepare(
