@@ -8,17 +8,28 @@ const START_HOUR = 6;
 const END_HOUR = 23;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 
+// Fixed department colours matching Workcloud areas
+const DEPT_COLORS = {
+  'management':         { bg: '#1e3a8a', bar: '#1e3a8a', text: '#ffffff' }, // dark blue
+  'customer service':   { bg: '#2563eb', bar: '#2563eb', text: '#ffffff' }, // blue
+  'till':               { bg: '#2563eb', bar: '#2563eb', text: '#ffffff' }, // blue
+  'floor':              { bg: '#7c3aed', bar: '#7c3aed', text: '#ffffff' }, // purple
+  'replenishment':      { bg: '#16a34a', bar: '#16a34a', text: '#ffffff' }, // green
+  'replen':             { bg: '#16a34a', bar: '#16a34a', text: '#ffffff' },
+  'pricing':            { bg: '#ca8a04', bar: '#ca8a04', text: '#ffffff' }, // amber
+  'cleaning':           { bg: '#0891b2', bar: '#0891b2', text: '#ffffff' }, // cyan
+  'other':              { bg: '#64748b', bar: '#64748b', text: '#ffffff' }, // slate
+};
+
 const DEPT_PALETTE = [
-  { bg: '#dbeafe', bar: '#2563eb', text: '#1e40af' }, // blue
-  { bg: '#dcfce7', bar: '#16a34a', text: '#166534' }, // green
-  { bg: '#ede9fe', bar: '#7c3aed', text: '#5b21b6' }, // purple
-  { bg: '#fed7aa', bar: '#ea580c', text: '#9a3412' }, // orange
-  { bg: '#fce7f3', bar: '#db2777', text: '#9d174d' }, // pink
-  { bg: '#cffafe', bar: '#0891b2', text: '#155e75' }, // cyan
-  { bg: '#fef9c3', bar: '#ca8a04', text: '#713f12' }, // yellow
-  { bg: '#f1f5f9', bar: '#475569', text: '#1e293b' }, // slate
-  { bg: '#fce8e8', bar: '#dc2626', text: '#991b1b' }, // red
-  { bg: '#d1fae5', bar: '#059669', text: '#065f46' }, // emerald
+  { bg: '#2563eb', bar: '#2563eb', text: '#ffffff' },
+  { bg: '#16a34a', bar: '#16a34a', text: '#ffffff' },
+  { bg: '#7c3aed', bar: '#7c3aed', text: '#ffffff' },
+  { bg: '#ea580c', bar: '#ea580c', text: '#ffffff' },
+  { bg: '#db2777', bar: '#db2777', text: '#ffffff' },
+  { bg: '#0891b2', bar: '#0891b2', text: '#ffffff' },
+  { bg: '#ca8a04', bar: '#ca8a04', text: '#ffffff' },
+  { bg: '#475569', bar: '#475569', text: '#ffffff' },
 ];
 
 function buildDeptMap(employees) {
@@ -26,13 +37,16 @@ function buildDeptMap(employees) {
   let idx = 0;
   for (const emp of employees) {
     const key = (emp.area || 'Other').toLowerCase();
-    if (!map[key]) map[key] = DEPT_PALETTE[idx++ % DEPT_PALETTE.length];
+    if (!map[key]) {
+      map[key] = DEPT_COLORS[key] || DEPT_PALETTE[idx++ % DEPT_PALETTE.length];
+    }
   }
   return map;
 }
 
 function getDeptColor(area, deptMap) {
-  return deptMap[(area || 'Other').toLowerCase()] || DEPT_PALETTE[0];
+  const key = (area || 'Other').toLowerCase();
+  return deptMap[key] || DEPT_COLORS[key] || DEPT_PALETTE[0];
 }
 
 function timeToFraction(timeStr) {

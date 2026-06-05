@@ -241,18 +241,26 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_ANALYSIS_PROMPT = `You are a rota scheduling analyst. Your job is to review a weekly work schedule and provide:
-1. A detailed written analysis of any issues found
-2. Concrete, specific suggestions for corrections
+const DEFAULT_ANALYSIS_PROMPT = `You are a rota scheduling analyst reviewing a Zebra Workcloud weekly schedule export.
 
-Focus on:
-- Anyone scheduled over their contracted hours (overtime risk)
-- Anyone scheduled under their contracted hours (undertime / lost hours)
-- Whether the total scheduled hours stay within the weekly approved budget
-- Coverage gaps (days/times with too few staff)
-- Any fairness or compliance concerns
+SCHEDULE FORMAT (Workcloud):
+- Each row = one employee, columns = days of the week (Sun–Sat), last column = Total Hours for the week
+- Shift format: "HH:MM - HH:MM (CODE)" e.g. "09:00 - 17:00 (TL)"
+- Area codes: MA=Management, TL=Till/Customer Service, FL=Floor, R=Replenishment, P=Pricing, C=Cleaning, DR=Driver
+- "(m)" entries are 30-min paid meal breaks WITHIN the shift — do NOT count these as separate hours
+- Night shifts cross midnight: "20:00 - 07:00" = 11 hours (next day)
+- "Day Off" means the employee is not scheduled
+- The TOTAL HOURS column at the end of each row is the authoritative weekly hour count — use this directly instead of recalculating
 
-Write your narrative analysis in clear English. Be specific: name the employees, state the exact hour differences, and suggest which shifts to move or swap.`;
+ANALYSIS FOCUS:
+- Compare each employee's Total Hours against their contracted hours
+- Flag anyone over contracted hours (overtime risk)
+- Flag anyone under contracted hours (lost hours / undertime)
+- Check if total scheduled hours across all staff exceed the weekly approved budget
+- Flag coverage gaps: times when departments have insufficient cover
+- Note any compliance concerns (e.g. long shifts without breaks, back-to-back night shifts)
+
+Write your analysis in clear English. Name specific employees, state exact hour differences, and give concrete shift adjustment recommendations.`;
 
 app.get('/api/settings/public', requireAuth, (req, res) => {
   const budget = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');
@@ -389,16 +397,26 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
       tool_choice: { type: 'tool', name: 'submit_rota_analysis' },
       messages: [{
         role: 'user',
-        content: `Analyse this weekly rota schedule.
+        content: `Analyse this Zebra Workcloud weekly rota schedule.
 
-EMPLOYEES (${employees.length} total – match by surname if needed):
+SCHEDULE FORMAT:
+- Each employee row has shifts per day (Sun-Sat) then TOTAL HOURS as the last value
+- Shift format: "HH:MM - HH:MM (CODE)" — area codes: MA=Management, TL=Till, FL=Floor, R=Replenishment, P=Pricing, C=Cleaning
+- "(m)" = meal break within shift, NOT extra hours — ignore for hour calculation
+- Night shifts cross midnight: "20:00 - 07:00" = 11h
+- "Day Off" = not scheduled
+- USE THE TOTAL HOURS COLUMN VALUE directly — it is already calculated by Workcloud
+
+EMPLOYEE DATABASE (match by surname if needed):
 ${employeeList}
 
 WEEKLY BUDGET: ${weeklyBudget}h | WEEK: ${weekLabel || 'not specified'}
 
-SCHEDULE:
-${pdfText.substring(0, 10000)}
+SCHEDULE TEXT:
+${pdfText.substring(0, 12000)}
 
+For each employee: use their Workcloud Total Hours as scheduledHours, compare to contracted hours.
+For shifts: extract day, start time, end time from the schedule text.
 Use the submit_rota_analysis tool to return the structured result.`,
       }],
     });
