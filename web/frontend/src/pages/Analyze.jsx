@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLang } from '../i18n.jsx';
 import PrintView from './PrintView.jsx';
+import { marked } from 'marked';
+
+marked.setOptions({ breaks: true, gfm: true });
 
 function StatusBadge({ status }) {
   const { t } = useLang();
@@ -41,9 +44,10 @@ function AnalysisResult({ result, employees, onClose }) {
         <div className="card" style={{ marginBottom: 20, borderLeft: '4px solid var(--primary)' }}>
           <div className="card-header"><div className="card-title">📝 Analysis & Recommendations</div></div>
           <div className="card-body">
-            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--gray-700)', whiteSpace: 'pre-wrap' }}>
-              {narrative}
-            </div>
+            <div
+              style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--gray-700)' }}
+              dangerouslySetInnerHTML={{ __html: marked.parse(narrative) }}
+            />
           </div>
         </div>
       )}
