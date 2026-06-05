@@ -36,6 +36,7 @@ for (const col of [
   "ALTER TABLE employees ADD COLUMN area TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE employees ADD COLUMN role TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE employees ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE employees ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'",
 ]) {
   try { db.exec(col); } catch { /* column already exists */ }
 }

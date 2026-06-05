@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLang } from '../i18n.jsx';
+import { SkillBadgeRow, SkillToggleGrid } from '../components/Skills.jsx';
 
 // ─── Inline edit row ──────────────────────────────────────────────────────────
 
@@ -10,33 +11,43 @@ function EditRow({ emp, onSave, onCancel, t }) {
     area: emp.area || '',
     role: emp.role || '',
     notes: emp.notes || '',
+    skills: (() => { try { return JSON.parse(emp.skills || '[]'); } catch { return []; } })(),
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
-    <tr style={{ background: '#eff6ff' }}>
-      <td>
-        <input className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} style={{ padding: '5px 8px', minWidth: 140 }} />
-      </td>
-      <td>
-        <input className="form-input" value={form.area} onChange={(e) => set('area', e.target.value)} placeholder={t('empAreaPlaceholder')} style={{ padding: '5px 8px', minWidth: 120 }} />
-      </td>
-      <td>
-        <input className="form-input" value={form.role} onChange={(e) => set('role', e.target.value)} placeholder={t('empRolePlaceholder')} style={{ padding: '5px 8px', minWidth: 120 }} />
-      </td>
-      <td>
-        <input className="form-input" type="number" value={form.contracted_hours} onChange={(e) => set('contracted_hours', e.target.value)} min="0" max="168" step="0.5" style={{ padding: '5px 8px', width: 70 }} />
-      </td>
-      <td>
-        <input className="form-input" value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder={t('empNotesPlaceholder')} style={{ padding: '5px 8px', minWidth: 100 }} />
-      </td>
-      <td>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className="btn btn-success btn-sm" onClick={() => onSave({ ...form, contractedHours: parseFloat(form.contracted_hours) || 0 })}>{t('empSave')}</button>
-          <button className="btn btn-secondary btn-sm" onClick={onCancel}>{t('empCancel')}</button>
-        </div>
-      </td>
-    </tr>
+    <>
+      <tr style={{ background: '#eff6ff' }}>
+        <td>
+          <input className="form-input" value={form.name} onChange={(e) => set('name', e.target.value)} style={{ padding: '5px 8px', minWidth: 140 }} />
+        </td>
+        <td>
+          <input className="form-input" value={form.area} onChange={(e) => set('area', e.target.value)} placeholder={t('empAreaPlaceholder')} style={{ padding: '5px 8px', minWidth: 120 }} />
+        </td>
+        <td>
+          <input className="form-input" value={form.role} onChange={(e) => set('role', e.target.value)} placeholder={t('empRolePlaceholder')} style={{ padding: '5px 8px', minWidth: 120 }} />
+        </td>
+        <td>
+          <input className="form-input" type="number" value={form.contracted_hours} onChange={(e) => set('contracted_hours', e.target.value)} min="0" max="168" step="0.5" style={{ padding: '5px 8px', width: 70 }} />
+        </td>
+        <td>
+          <input className="form-input" value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder={t('empNotesPlaceholder')} style={{ padding: '5px 8px', minWidth: 100 }} />
+        </td>
+        <td>—</td>
+        <td>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button className="btn btn-success btn-sm" onClick={() => onSave({ ...form, contractedHours: parseFloat(form.contracted_hours) || 0 })}>{t('empSave')}</button>
+            <button className="btn btn-secondary btn-sm" onClick={onCancel}>{t('empCancel')}</button>
+          </div>
+        </td>
+      </tr>
+      <tr style={{ background: '#eff6ff' }}>
+        <td colSpan={7} style={{ padding: '8px 12px 14px', borderTop: '1px dashed #bfdbfe' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 8 }}>SKILLS</div>
+          <SkillToggleGrid value={form.skills} onChange={(v) => set('skills', v)} />
+        </td>
+      </tr>
+    </>
   );
 }
 
@@ -405,6 +416,7 @@ export default function Employees() {
                   <th>{t('colRole')}</th>
                   <th>{t('colHours')}</th>
                   <th>{t('empNotes')}</th>
+                  <th>Skills</th>
                   <th style={{ width: 130 }}>{t('colActions')}</th>
                 </tr>
               </thead>
@@ -425,6 +437,9 @@ export default function Employees() {
                       <td>{emp.role ? <span style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{emp.role}</span> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td><strong>{emp.contracted_hours}</strong> h</td>
                       <td style={{ color: 'var(--gray-500)', fontSize: 13 }}>{emp.notes || <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                      <td>
+                        <SkillBadgeRow skills={(() => { try { return JSON.parse(emp.skills || '[]'); } catch { return []; } })()} />
+                      </td>
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button className="btn btn-secondary btn-sm" onClick={() => setEditId(emp.id)}>{t('empEdit')}</button>

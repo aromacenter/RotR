@@ -89,23 +89,23 @@ app.get('/api/employees', requireAuth, (req, res) => {
 });
 
 app.post('/api/employees', requireAuth, (req, res) => {
-  const { name, contractedHours, area = '', role = '', notes = '' } = req.body || {};
+  const { name, contractedHours, area = '', role = '', notes = '', skills = [] } = req.body || {};
   if (!name?.trim() || contractedHours == null) {
     return res.status(400).json({ error: 'Név és szerződéses óra megadása kötelező' });
   }
   const result = db
-    .prepare('INSERT INTO employees (name, contracted_hours, area, role, notes) VALUES (?, ?, ?, ?, ?)')
-    .run(name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim());
-  res.json({ id: result.lastInsertRowid, name: name.trim(), contracted_hours: Number(contractedHours), area, role, notes });
+    .prepare('INSERT INTO employees (name, contracted_hours, area, role, notes, skills) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), JSON.stringify(skills));
+  res.json({ id: result.lastInsertRowid, name: name.trim(), contracted_hours: Number(contractedHours), area, role, notes, skills });
 });
 
 app.put('/api/employees/:id', requireAuth, (req, res) => {
-  const { name, contractedHours, area = '', role = '', notes = '' } = req.body || {};
+  const { name, contractedHours, area = '', role = '', notes = '', skills = [] } = req.body || {};
   if (!name?.trim() || contractedHours == null) {
     return res.status(400).json({ error: 'Hiányzó adatok' });
   }
-  db.prepare('UPDATE employees SET name = ?, contracted_hours = ?, area = ?, role = ?, notes = ? WHERE id = ?').run(
-    name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), req.params.id
+  db.prepare('UPDATE employees SET name = ?, contracted_hours = ?, area = ?, role = ?, notes = ?, skills = ? WHERE id = ?').run(
+    name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), JSON.stringify(skills), req.params.id
   );
   res.json({ ok: true });
 });
@@ -207,25 +207,27 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
   }
 
   const insert = db.prepare(
-    'INSERT INTO employees (name, contracted_hours, area, role, notes) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO employees (name, contracted_hours, area, role, notes, skills) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const upsert = db.prepare(`
-    INSERT INTO employees (name, contracted_hours, area, role, notes) VALUES (?, ?, ?, ?, ?)
+    INSERT INTO employees (name, contracted_hours, area, role, notes, skills) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       contracted_hours = excluded.contracted_hours,
       area = excluded.area,
       role = excluded.role,
-      notes = excluded.notes
+      notes = excluded.notes,
+      skills = excluded.skills
   `);
 
   let imported = 0;
   for (const emp of employees) {
     if (!emp.name?.trim()) continue;
     try {
+      const skillsJson = JSON.stringify(emp.skills || []);
       if (mode === 'replace') {
-        insert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '');
+        insert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '', skillsJson);
       } else {
-        upsert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '');
+        upsert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '', skillsJson);
       }
       imported++;
     } catch (e) {
