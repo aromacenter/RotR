@@ -4,6 +4,8 @@ import { useLang } from '../i18n.jsx';
 export default function Settings({ onLogout }) {
   const { t } = useLang();
   const [weeklyBudget, setWeeklyBudget] = useState('');
+  const [analysisPrompt, setAnalysisPrompt] = useState('');
+  const [defaultPrompt, setDefaultPrompt] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -13,7 +15,11 @@ export default function Settings({ onLogout }) {
   useEffect(() => {
     fetch('/api/settings/public')
       .then((r) => r.json())
-      .then((d) => { if (d.weeklyBudget) setWeeklyBudget(String(d.weeklyBudget)); });
+      .then((d) => {
+        if (d.weeklyBudget) setWeeklyBudget(String(d.weeklyBudget));
+        if (d.analysisPrompt) setAnalysisPrompt(d.analysisPrompt);
+        if (d.defaultPrompt) setDefaultPrompt(d.defaultPrompt);
+      });
   }, []);
 
   const flash = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 4000); };
@@ -31,6 +37,26 @@ export default function Settings({ onLogout }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       flash(t('settingsSaved'));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSavePrompt = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysisPrompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      flash('Analysis prompt saved');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -75,6 +101,42 @@ export default function Settings({ onLogout }) {
 
       {error && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
+
+      {/* ── Analysis Prompt ─────────────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card-header">
+          <div className="card-title">🧠 Analysis Prompt</div>
+        </div>
+        <div className="card-body">
+          <p style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 12 }}>
+            Define what the AI should focus on when analysing a rota. Be specific about rules, priorities and what to flag.
+          </p>
+          <form onSubmit={handleSavePrompt}>
+            <div className="form-group">
+              <textarea
+                className="form-input"
+                value={analysisPrompt}
+                onChange={(e) => setAnalysisPrompt(e.target.value)}
+                rows={8}
+                style={{ fontFamily: 'monospace', fontSize: 13, resize: 'vertical' }}
+                placeholder="e.g. Focus on lunch hour coverage (12:00-14:00). Flag anyone working more than 6 hours without a break. Ensure at least one keyholder per shift..."
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="submit" className="btn btn-primary" disabled={loading}>
+                {loading ? <><span className="spinner" />Saving...</> : 'Save Prompt'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAnalysisPrompt(defaultPrompt)}
+              >
+                Reset to default
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
 
       <div className="two-col">
         <div className="card">

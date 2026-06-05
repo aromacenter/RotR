@@ -248,18 +248,41 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
+const DEFAULT_ANALYSIS_PROMPT = `You are a rota scheduling analyst. Your job is to review a weekly work schedule and provide:
+1. A detailed written analysis of any issues found
+2. Concrete, specific suggestions for corrections
+
+Focus on:
+- Anyone scheduled over their contracted hours (overtime risk)
+- Anyone scheduled under their contracted hours (undertime / lost hours)
+- Whether the total scheduled hours stay within the weekly approved budget
+- Coverage gaps (days/times with too few staff)
+- Any fairness or compliance concerns
+
+Write your narrative analysis in clear English. Be specific: name the employees, state the exact hour differences, and suggest which shifts to move or swap.`;
+
 app.get('/api/settings/public', requireAuth, (req, res) => {
   const budget = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');
-  res.json({ weeklyBudget: budget ? Number(budget.value) : 0 });
+  const promptRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('analysis_prompt');
+  res.json({
+    weeklyBudget: budget ? Number(budget.value) : 0,
+    analysisPrompt: promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT,
+    defaultPrompt: DEFAULT_ANALYSIS_PROMPT,
+  });
 });
 
 app.post('/api/settings', requireAuth, async (req, res) => {
-  const { weeklyBudget, newPassword } = req.body || {};
+  const { weeklyBudget, newPassword, analysisPrompt } = req.body || {};
 
   if (weeklyBudget != null) {
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-      'weekly_budget',
-      String(Number(weeklyBudget))
+      'weekly_budget', String(Number(weeklyBudget))
+    );
+  }
+
+  if (analysisPrompt != null) {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
+      'analysis_prompt', analysisPrompt.trim() || DEFAULT_ANALYSIS_PROMPT
     );
   }
 
@@ -316,34 +339,29 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
       .map((e) => `- ${e.name} | contracted: ${e.contracted_hours}h/week | area: ${e.area || 'n/a'} | role: ${e.role || 'n/a'}`)
       .join('\n');
 
-    const prompt = `You are a rota scheduling analyst. Analyse the weekly rota schedule below and return a structured JSON report.
+    const promptRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('analysis_prompt');
+    const customInstructions = promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT;
+
+    const prompt = `You are a rota scheduling analyst. Analyse the weekly rota schedule below.
 
 ## EMPLOYEE DATABASE (${employees.length} employees)
-These are ALL known employees. Match names from the schedule to this list (allow partial/surname-only matches):
+Match names from the schedule to this list (allow partial/surname-only matches):
 ${employeeList}
 
 ## WEEKLY PARAMETERS
 - Week: ${weekLabel || 'not specified'}
 - Approved total weekly hours budget: ${weeklyBudget}h
-- Analysis rules:
-  * Flag anyone scheduled MORE than their contracted hours (overtime)
-  * Flag anyone scheduled LESS than their contracted hours (undertime)
-  * Flag if total scheduled hours exceed the ${weeklyBudget}h weekly budget
-  * Shifts are typically shown as time ranges (e.g. 09:00-17:00 = 8h) or as hour numbers
+
+## CUSTOM ANALYSIS INSTRUCTIONS
+${customInstructions}
 
 ## SCHEDULE PDF TEXT
 ${pdfText.substring(0, 10000)}
 
-## INSTRUCTIONS
-1. Match each employee in the schedule to the database above (use surname matching if needed)
-2. Calculate total scheduled hours per employee for the week
-3. Compare to their contracted hours
-4. Check total vs ${weeklyBudget}h budget
-5. List all violations clearly
-6. Give actionable correction suggestions
-
-Return ONLY a raw JSON object (no markdown, no code blocks, no extra text):
-{"weekLabel":"${weekLabel}","employees":[{"name":"exact name from database","scheduledHours":0,"contractedHours":0,"difference":0,"status":"ok","shifts":[{"day":"Monday","start":"09:00","end":"17:00","hours":8}]}],"totalScheduledHours":0,"approvedBudget":${weeklyBudget},"budgetStatus":"ok","budgetDifference":0,"violations":[],"suggestions":[],"summary":""}`;
+## OUTPUT FORMAT
+Return ONLY a raw JSON object (no markdown, no code blocks, no extra text).
+The "narrative" field must be a detailed written analysis in English with specific names and hour figures, followed by concrete rota correction suggestions.
+{"weekLabel":"${weekLabel}","narrative":"DETAILED TEXT ANALYSIS AND CONCRETE SUGGESTIONS HERE - minimum 150 words, specific employee names, exact hours, specific swap/change recommendations","employees":[{"name":"exact name from database","scheduledHours":0,"contractedHours":0,"difference":0,"status":"ok","shifts":[{"day":"Monday","start":"09:00","end":"17:00","hours":8}]}],"totalScheduledHours":0,"approvedBudget":${weeklyBudget},"budgetStatus":"ok","budgetDifference":0,"violations":[],"suggestions":[],"summary":""}`;
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLang } from '../i18n.jsx';
+import PrintView from './PrintView.jsx';
 
 function StatusBadge({ status }) {
   const { t } = useLang();
@@ -9,15 +10,20 @@ function StatusBadge({ status }) {
   return <span className="badge badge-neutral">{t('badgeNotFound')}</span>;
 }
 
-function AnalysisResult({ result, onClose }) {
+function AnalysisResult({ result, employees, onClose }) {
   const { t } = useLang();
-  const { employees = [], violations = [], suggestions = [], summary } = result;
+  const [showPrint, setShowPrint] = React.useState(false);
+  const { employees: empResults = [], violations = [], suggestions = [], summary, narrative } = result;
+
+  if (showPrint) {
+    return <PrintView analysis={result} employees={employees} onClose={() => setShowPrint(false)} />;
+  }
   const totalScheduled = result.totalScheduledHours ?? 0;
   const budget = result.approvedBudget ?? 0;
   const budgetStatus = result.budgetStatus ?? 'ok';
-  const overCount = employees.filter((e) => e.status === 'over').length;
-  const underCount = employees.filter((e) => e.status === 'under').length;
-  const okCount = employees.filter((e) => e.status === 'ok').length;
+  const overCount = empResults.filter((e) => e.status === 'over').length;
+  const underCount = empResults.filter((e) => e.status === 'under').length;
+  const okCount = empResults.filter((e) => e.status === 'ok').length;
 
   return (
     <div>
@@ -25,10 +31,23 @@ function AnalysisResult({ result, onClose }) {
         <h2 style={{ fontSize: 18, fontWeight: 700 }}>
           {t('resultTitle')}{result.weekLabel ? ` – ${result.weekLabel}` : ''}
         </h2>
-        <button className="btn btn-secondary btn-sm" onClick={onClose}>{t('analyzeNewAnalysis')}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowPrint(true)}>🖨️ Print / Hardcopy</button>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>{t('analyzeNewAnalysis')}</button>
+        </div>
       </div>
 
-      {summary && (
+      {narrative && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '4px solid var(--primary)' }}>
+          <div className="card-header"><div className="card-title">📝 Analysis & Recommendations</div></div>
+          <div className="card-body">
+            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--gray-700)', whiteSpace: 'pre-wrap' }}>
+              {narrative}
+            </div>
+          </div>
+        </div>
+      )}
+      {!narrative && summary && (
         <div className="alert alert-info" style={{ marginBottom: 24 }}>
           <strong>{t('resultSummaryLabel')}:</strong> {summary}
         </div>
@@ -76,7 +95,7 @@ function AnalysisResult({ result, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {employees.map((emp, i) => (
+              {empResults.map((emp, i) => (
                 <tr key={i} className={`employee-row-${emp.status}`}>
                   <td><strong>{emp.name}</strong></td>
                   <td>{emp.scheduledHours ?? '?'} h</td>
@@ -166,7 +185,7 @@ export default function Analyze() {
     }
   };
 
-  if (result) return <AnalysisResult result={result} onClose={() => { setResult(null); setFile(null); }} />;
+  if (result) return <AnalysisResult result={result} employees={employees} onClose={() => { setResult(null); setFile(null); }} />;
 
   const effectiveBudget = parseFloat(customBudget) || settings.weeklyBudget || 0;
 
