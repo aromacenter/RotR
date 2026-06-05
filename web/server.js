@@ -145,7 +145,7 @@ Azonosítsd az összes alkalmazottat és a hozzájuk tartozó adatokat:
 - Terület / részleg ahol dolgoznak (pl. pénztár, raktár, értékesítés, adminisztráció, stb.)
 - Szerepkör / pozíció (pl. keyholder, supervisor, manager, colleague, stb.)
 - Heti szerződéses munkaórák száma (általában a sor végén vagy egy dedikált oszlopban szerepel)
-- Egyéb megjegyzések (ha van)
+- Certifications / képesítések: az alkalmazott neve alatt vagy mellett felsorolt tanúsítványok, képesítések, jogosultságok (pl. first aid, fire marshal, DBS, food hygiene, stb.) – ezeket vesszővel elválasztva add meg a notes mezőben
 
 PDF szöveg:
 ---
@@ -160,7 +160,7 @@ VÁLASZOLJ KIZÁRÓLAG érvényes JSON formátumban, semmi más szöveg nélkül
       "area": "terület/részleg",
       "role": "szerepkör",
       "contractedHours": 40,
-      "notes": "egyéb megjegyzés vagy üres string"
+      "notes": "Certifications: First Aid, Fire Marshal, Food Hygiene"
     }
   ],
   "sourceInfo": "rövid leírás hogy milyen típusú dokumentumból lettek kinyerve az adatok"
@@ -170,6 +170,8 @@ Fontos szabályok:
 - Ha nem találsz contracted hours értéket, használj 0-t
 - Ha nem találsz területet, hagyd üres stringként
 - Ha nem találsz szerepkört, hagyd üres stringként
+- Ha van certification / képesítés adat az alkalmazott neve alatt vagy mellett, azt mindenképpen add meg a notes mezőben "Certifications: ..." formátumban
+- Ha nincs certification, a notes mező legyen üres string
 - Ne találj ki adatokat, csak ami egyértelműen szerepel a szövegben`;
 
     const message = await client.messages.create({
