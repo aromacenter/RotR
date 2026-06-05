@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState } from 'react';
 
 const translations = {
   hu: {
-    appName: 'Rota Planner',
-    appSubtitle: 'Beosztás elemző',
+    appName: 'RotR',
+    appSubtitle: 'rota analysing software',
     loggedInAs: 'Bejelentkezve',
 
     // Nav
@@ -13,8 +13,8 @@ const translations = {
     navSettings: 'Beállítások',
 
     // Login
-    loginTitle: 'Rota Planner',
-    loginSubtitle: 'Beosztás elemző rendszer',
+    loginTitle: 'RotR',
+    loginSubtitle: 'rota analysing software',
     loginUsername: 'Felhasználónév',
     loginPassword: 'Jelszó',
     loginButton: 'Bejelentkezés',
@@ -187,8 +187,8 @@ const translations = {
   },
 
   en: {
-    appName: 'Rota Planner',
-    appSubtitle: 'Schedule analyser',
+    appName: 'RotR',
+    appSubtitle: 'rota analysing software',
     loggedInAs: 'Logged in as',
 
     // Nav
@@ -198,8 +198,8 @@ const translations = {
     navSettings: 'Settings',
 
     // Login
-    loginTitle: 'Rota Planner',
-    loginSubtitle: 'Schedule analysis system',
+    loginTitle: 'RotR',
+    loginSubtitle: 'rota analysing software',
     loginUsername: 'Username',
     loginPassword: 'Password',
     loginButton: 'Log in',
