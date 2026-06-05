@@ -1,0 +1,9 @@
+{
+  "name": "rota-planner",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd web && npm install && npm run build",
+    "start": "node web/server.js"
+  }
+}

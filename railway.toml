@@ -1,0 +1,7 @@
+[build]
+buildCommand = "cd web && npm install && npm run build"
+
+[deploy]
+startCommand = "node web/server.js"
+healthcheckPath = "/api/me"
+restartPolicyType = "on_failure"
