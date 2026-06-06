@@ -44,7 +44,7 @@ async function extractPositionedLines(buffer) {
   await pdfParse(buffer, {
     pagerender: (pageData) => pageData.getTextContent().then((tc) => {
       const items = tc.items
-        .map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] }))
+        .map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5], width: it.width || 0 }))
         .filter(it => it.str && it.str.trim());
       // Group into rows by Y proximity (PDF coordinates: same row = same y)
       const rows = [];
@@ -63,7 +63,7 @@ async function extractPositionedLines(buffer) {
         for (const it of row.items) {
           const start = text.length;
           text += it.str;
-          itemsWithOffsets.push({ str: it.str, x: it.x, start, end: text.length });
+          itemsWithOffsets.push({ str: it.str, x: it.x, width: it.width, start, end: text.length });
           text += ' ';
         }
         allLines.push({ text: text.trim(), items: itemsWithOffsets, y: row.y });
@@ -75,11 +75,25 @@ async function extractPositionedLines(buffer) {
 }
 
 // Given a line (with .items carrying character offsets + x-coordinates) and a
-// character index into line.text, returns the x-coordinate of the text item
-// that produced that character - i.e. "where on the page was this match".
+// character index into line.text, returns the on-page x-coordinate that
+// character was rendered at - i.e. "where on the page was this match".
+//
+// IMPORTANT: a whole table ROW is sometimes emitted as a SINGLE text item
+// spanning all 7 day columns (e.g. "09:00-14:00 (TL) 09:00-14:00 (TL) ...").
+// Returning that item's start-x for every match would collapse every shift
+// in the row onto the same (leftmost/Sunday) column. So when the matched
+// character isn't near the item's start, interpolate its x position
+// proportionally across the item's width by character offset - this assumes
+// roughly even character spacing, which holds for these monospaced/tabular
+// PDF exports and is far more accurate than a single fixed x per item.
 function xAtIndex(line, idx) {
   for (const it of line.items) {
-    if (idx >= it.start && idx <= it.end) return it.x;
+    if (idx >= it.start && idx <= it.end) {
+      const len = it.end - it.start;
+      if (len <= 0 || !it.width) return it.x;
+      const frac = (idx - it.start) / len;
+      return it.x + frac * it.width;
+    }
   }
   let best = null, bestDist = Infinity;
   for (const it of line.items) {
