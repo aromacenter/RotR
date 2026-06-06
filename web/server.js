@@ -241,23 +241,23 @@ app.get('/api/employees', requireAuth, (req, res) => {
 });
 
 app.post('/api/employees', requireAuth, (req, res) => {
-  const { name, contractedHours, area = '', role = '', notes = '', skills = [] } = req.body || {};
+  const { name, contractedHours, area = '', role = '', notes = '', skills = [], workDays = 0 } = req.body || {};
   if (!name?.trim() || contractedHours == null) {
     return res.status(400).json({ error: 'Név és szerződéses óra megadása kötelező' });
   }
   const result = db
-    .prepare('INSERT INTO employees (name, contracted_hours, area, role, notes, skills) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), JSON.stringify(skills));
-  res.json({ id: result.lastInsertRowid, name: name.trim(), contracted_hours: Number(contractedHours), area, role, notes, skills });
+    .prepare('INSERT INTO employees (name, contracted_hours, area, role, notes, skills, work_days) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), JSON.stringify(skills), Number(workDays) || 0);
+  res.json({ id: result.lastInsertRowid, name: name.trim(), contracted_hours: Number(contractedHours), area, role, notes, skills, work_days: Number(workDays) || 0 });
 });
 
 app.put('/api/employees/:id', requireAuth, (req, res) => {
-  const { name, contractedHours, area = '', role = '', notes = '', skills = [] } = req.body || {};
+  const { name, contractedHours, area = '', role = '', notes = '', skills = [], workDays = 0 } = req.body || {};
   if (!name?.trim() || contractedHours == null) {
     return res.status(400).json({ error: 'Hiányzó adatok' });
   }
-  db.prepare('UPDATE employees SET name = ?, contracted_hours = ?, area = ?, role = ?, notes = ?, skills = ? WHERE id = ?').run(
-    name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), JSON.stringify(skills), req.params.id
+  db.prepare('UPDATE employees SET name = ?, contracted_hours = ?, area = ?, role = ?, notes = ?, skills = ?, work_days = ? WHERE id = ?').run(
+    name.trim(), Number(contractedHours), area.trim(), role.trim(), notes.trim(), JSON.stringify(skills), Number(workDays) || 0, req.params.id
   );
   res.json({ ok: true });
 });
@@ -360,16 +360,17 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
   }
 
   const insert = db.prepare(
-    'INSERT INTO employees (name, contracted_hours, area, role, notes, skills) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO employees (name, contracted_hours, area, role, notes, skills, work_days) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
   const upsert = db.prepare(`
-    INSERT INTO employees (name, contracted_hours, area, role, notes, skills) VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO employees (name, contracted_hours, area, role, notes, skills, work_days) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       contracted_hours = excluded.contracted_hours,
       area = excluded.area,
       role = excluded.role,
       notes = excluded.notes,
-      skills = excluded.skills
+      skills = excluded.skills,
+      work_days = excluded.work_days
   `);
 
   let imported = 0;
@@ -377,10 +378,11 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
     if (!emp.name?.trim()) continue;
     try {
       const skillsJson = JSON.stringify(emp.skills || []);
+      const workDays = Number(emp.workDays) || 0;
       if (mode === 'replace') {
-        insert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '', skillsJson);
+        insert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '', skillsJson, workDays);
       } else {
-        upsert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '', skillsJson);
+        upsert.run(emp.name.trim(), Number(emp.contractedHours) || 0, emp.area || '', emp.role || '', emp.notes || '', skillsJson, workDays);
       }
       imported++;
     } catch (e) {

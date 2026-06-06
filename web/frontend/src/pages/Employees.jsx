@@ -11,6 +11,7 @@ function EditRow({ emp, onSave, onCancel, t }) {
     area: emp.area || '',
     role: emp.role || '',
     notes: emp.notes || '',
+    work_days: String(emp.work_days ?? 0),
     skills: (() => { try { return JSON.parse(emp.skills || '[]'); } catch { return []; } })(),
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -31,18 +32,21 @@ function EditRow({ emp, onSave, onCancel, t }) {
           <input className="form-input" type="number" value={form.contracted_hours} onChange={(e) => set('contracted_hours', e.target.value)} min="0" max="168" step="0.5" style={{ padding: '5px 8px', width: 70 }} />
         </td>
         <td>
+          <input className="form-input" type="number" value={form.work_days} onChange={(e) => set('work_days', e.target.value)} min="0" max="7" step="1" style={{ padding: '5px 8px', width: 60 }} />
+        </td>
+        <td>
           <input className="form-input" value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder={t('empNotesPlaceholder')} style={{ padding: '5px 8px', minWidth: 100 }} />
         </td>
         <td>—</td>
         <td>
           <div style={{ display: 'flex', gap: 4 }}>
-            <button className="btn btn-success btn-sm" onClick={() => onSave({ ...form, contractedHours: parseFloat(form.contracted_hours) || 0 })}>{t('empSave')}</button>
+            <button className="btn btn-success btn-sm" onClick={() => onSave({ ...form, contractedHours: parseFloat(form.contracted_hours) || 0, workDays: parseFloat(form.work_days) || 0 })}>{t('empSave')}</button>
             <button className="btn btn-secondary btn-sm" onClick={onCancel}>{t('empCancel')}</button>
           </div>
         </td>
       </tr>
       <tr style={{ background: '#eff6ff' }}>
-        <td colSpan={7} style={{ padding: '8px 12px 14px', borderTop: '1px dashed #bfdbfe' }}>
+        <td colSpan={8} style={{ padding: '8px 12px 14px', borderTop: '1px dashed #bfdbfe' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 8 }}>SKILLS</div>
           <SkillToggleGrid value={form.skills} onChange={(v) => set('skills', v)} />
         </td>
@@ -63,6 +67,7 @@ function ImportPreview({ rows, onChange, onRemove, t }) {
             <th>{t('importEditArea')}</th>
             <th>{t('importEditRole')}</th>
             <th style={{ width: 70 }}>{t('importEditHours')}</th>
+            <th style={{ width: 60 }}>{t('empWorkDays')}</th>
             <th>{t('importEditNotes')}</th>
             <th style={{ width: 36 }}></th>
           </tr>
@@ -81,6 +86,9 @@ function ImportPreview({ rows, onChange, onRemove, t }) {
               </td>
               <td>
                 <input className="form-input" type="number" value={row.contractedHours ?? 0} onChange={(e) => onChange(i, 'contractedHours', parseFloat(e.target.value) || 0)} min="0" max="168" step="0.5" style={{ padding: '4px 7px', width: 65 }} />
+              </td>
+              <td>
+                <input className="form-input" type="number" value={row.workDays ?? 0} onChange={(e) => onChange(i, 'workDays', parseFloat(e.target.value) || 0)} min="0" max="7" step="1" style={{ padding: '4px 7px', width: 55 }} />
               </td>
               <td>
                 <input className="form-input" value={row.notes || ''} onChange={(e) => onChange(i, 'notes', e.target.value)} style={{ padding: '4px 7px', minWidth: 90 }} />
@@ -106,7 +114,7 @@ export default function Employees() {
   const [success, setSuccess] = useState('');
 
   // Add form
-  const [newForm, setNewForm] = useState({ name: '', contracted_hours: '', area: '', role: '', notes: '' });
+  const [newForm, setNewForm] = useState({ name: '', contracted_hours: '', area: '', role: '', notes: '', work_days: '' });
 
   // Inline edit
   const [editId, setEditId] = useState(null);
@@ -154,11 +162,12 @@ export default function Employees() {
           area: newForm.area,
           role: newForm.role,
           notes: newForm.notes,
+          workDays: parseFloat(newForm.work_days) || 0,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setNewForm({ name: '', contracted_hours: '', area: '', role: '', notes: '' });
+      setNewForm({ name: '', contracted_hours: '', area: '', role: '', notes: '', work_days: '' });
       flash(t('empAdded'));
       load();
     } catch (err) {
@@ -372,6 +381,10 @@ export default function Employees() {
                 <input className="form-input" type="number" placeholder="40" min="0" max="168" step="0.5" value={newForm.contracted_hours} onChange={(e) => setNewForm((f) => ({ ...f, contracted_hours: e.target.value }))} required />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">{t('empWorkDays')}</label>
+                <input className="form-input" type="number" placeholder="5" min="0" max="7" step="1" value={newForm.work_days} onChange={(e) => setNewForm((f) => ({ ...f, work_days: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">{t('empNotes')}</label>
                 <input className="form-input" type="text" placeholder={t('empNotesPlaceholder')} value={newForm.notes} onChange={(e) => setNewForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
@@ -415,6 +428,7 @@ export default function Employees() {
                   <th>{t('colArea')}</th>
                   <th>{t('colRole')}</th>
                   <th>{t('colHours')}</th>
+                  <th>{t('empWorkDays')}</th>
                   <th>{t('empNotes')}</th>
                   <th>Skills</th>
                   <th style={{ width: 130 }}>{t('colActions')}</th>
@@ -436,6 +450,7 @@ export default function Employees() {
                       <td>{emp.area ? <span style={{ background: 'var(--gray-100)', padding: '2px 8px', borderRadius: 99, fontSize: 12 }}>{emp.area}</span> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td>{emp.role ? <span style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{emp.role}</span> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td><strong>{emp.contracted_hours}</strong> h</td>
+                      <td>{emp.work_days ? <strong>{emp.work_days}</strong> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td style={{ color: 'var(--gray-500)', fontSize: 13 }}>{emp.notes || <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td>
                         <SkillBadgeRow skills={(() => { try { return JSON.parse(emp.skills || '[]'); } catch { return []; } })()} />
