@@ -1,7 +1,5 @@
 import React, { useRef } from 'react';
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Hours shown on the chart: 06:00 – 23:00
 const START_HOUR = 6;
@@ -119,10 +117,20 @@ function GridLines() {
   );
 }
 
-function DayPage({ day, dayIdx, employees, deptMap, weekLabel, printMode }) {
-  // Filter employees who have a shift on this day
+const SHORT_TO_FULL = {
+  mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
+  fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+};
+
+function dayDisplayName(dayLabel) {
+  const short = (dayLabel || '').trim().slice(0, 3).toLowerCase();
+  return SHORT_TO_FULL[short] || dayLabel;
+}
+
+function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
+  // Filter employees who have a shift on this exact day label (e.g. "Mon 02 Jun")
   const working = employees.filter((emp) =>
-    (emp.shifts || []).some((s) => s.day?.toLowerCase() === day.toLowerCase())
+    (emp.shifts || []).some((s) => s.day === day)
   );
 
   if (working.length === 0) return null;
@@ -137,7 +145,7 @@ function DayPage({ day, dayIdx, employees, deptMap, weekLabel, printMode }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, borderBottom: '2px solid #1e293b', paddingBottom: 6 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
-            {day.toUpperCase()}
+            {dayDisplayName(day).toUpperCase()} <span style={{ fontWeight: 600, fontSize: 14, color: '#475569' }}>— {day}</span>
           </div>
           {weekLabel && <div style={{ fontSize: 10, color: '#64748b' }}>{weekLabel}</div>}
         </div>
@@ -153,7 +161,7 @@ function DayPage({ day, dayIdx, employees, deptMap, weekLabel, printMode }) {
       <div>
         {working.map((emp) => {
           const color = getDeptColor(emp.area, deptMap);
-          const dayShifts = (emp.shifts || []).filter((s) => s.day?.toLowerCase() === day.toLowerCase());
+          const dayShifts = (emp.shifts || []).filter((s) => s.day === day);
           return (
             <div key={emp.name} style={{
               display: 'flex',
@@ -221,6 +229,21 @@ export default function PrintView({ analysis, employees, onClose }) {
 
   const deptMap = buildDeptMap(enriched);
 
+  // Derive the actual day labels present in the data (e.g. "Mon 02 Jun", "Tue 03 Jun")
+  // in the order they first appear, instead of assuming a fixed Mon-Sun week.
+  const dayLabels = [];
+  for (const emp of enriched) {
+    for (const s of (emp.shifts || [])) {
+      if (s.day && !dayLabels.includes(s.day)) dayLabels.push(s.day);
+    }
+  }
+  const WEEKDAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  dayLabels.sort((a, b) => {
+    const ia = WEEKDAY_ORDER.indexOf((a || '').slice(0, 3).toLowerCase());
+    const ib = WEEKDAY_ORDER.indexOf((b || '').slice(0, 3).toLowerCase());
+    return ia - ib;
+  });
+
   const handlePrint = () => {
     const style = document.createElement('style');
     style.innerHTML = `
@@ -280,11 +303,10 @@ export default function PrintView({ analysis, employees, onClose }) {
 
       {/* Preview */}
       <div ref={printRef} style={{ background: 'white', border: '1px solid var(--gray-200)', borderRadius: 8, overflow: 'hidden' }}>
-        {DAYS.map((day, idx) => (
+        {dayLabels.map((day) => (
           <DayPage
             key={day}
             day={day}
-            dayIdx={idx}
             employees={enriched}
             deptMap={deptMap}
             weekLabel={analysis.weekLabel}
