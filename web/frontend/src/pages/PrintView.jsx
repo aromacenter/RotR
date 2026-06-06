@@ -260,10 +260,17 @@ export default function PrintView({ analysis, employees, onClose }) {
 
   // Merge employee area data from DB into analysis employees
   const enriched = (analysis.employees || []).map((ae) => {
-    const dbEmp = employees.find((e) =>
-      e.name.toLowerCase() === ae.name.toLowerCase() ||
-      e.name.toLowerCase().includes(ae.name.split(',')[0].toLowerCase())
-    );
+    // Match strictly on "Surname, Firstname" (both parts), not just a surname
+    // substring — a loose `.includes(surname)` match can collide between two
+    // employees sharing the same surname (e.g. "Palvolgyi, Gabor" vs
+    // "Palvolgyi, Erika"), silently picking the wrong one and inheriting its
+    // group/area for the print view.
+    const [aeSurname = '', aeFirst = ''] = ae.name.split(',').map((s) => s.trim().toLowerCase());
+    const dbEmp = employees.find((e) => {
+      if (e.name.toLowerCase() === ae.name.toLowerCase()) return true;
+      const [dbSurname = '', dbFirst = ''] = e.name.split(',').map((s) => s.trim().toLowerCase());
+      return dbSurname === aeSurname && dbFirst === aeFirst;
+    });
     return { ...ae, area: dbEmp?.dept_group || dbEmp?.area || ae.area || 'Other' };
   });
 
