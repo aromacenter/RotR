@@ -972,14 +972,39 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
       .map(e => `  ${e.name}: ${e.scheduledHours}h scheduled / ${e.contractedHours}h contracted → ${e.status.toUpperCase()} (${e.difference > 0 ? '+' : ''}${e.difference}h)`)
       .join('\n');
 
-    // Build per-day roster summary so AI can check keyholder / till / floor / replen coverage
+    // Build employee skills reference (from DB) so AI knows who is a
+    // keyholder, till-trained, supervisor, etc. when checking coverage rules.
+    const skillsIndex = {};
+    for (const dbEmp of employees) {
+      let skills = [];
+      try { skills = JSON.parse(dbEmp.skills || '[]'); } catch {}
+      if (skills.length) skillsIndex[dbEmp.name] = skills;
+    }
+    const skillLabels = {
+      keyholder: 'Keyholder 🔑',
+      till_trained: 'Till Trained 🛒',
+      cash_office: 'Cash Office 💷',
+      till_supervisor: 'Till Supervisor (TS)',
+      floor_supervisor: 'Floor Supervisor (FS)',
+      replen_supervisor: 'Replen Supervisor (RS)',
+      forklift: 'Forklift/EPT (FT)',
+      bailer: 'Bailer Trained (BA)',
+      cleaning_machine: 'Cleaning Machine (CM)',
+    };
+    const empSkillsSummary = Object.entries(skillsIndex)
+      .map(([name, skills]) => `  ${name}: ${skills.map(k => skillLabels[k] || k).join(', ')}`)
+      .join('\n') || '  (no skill data recorded)';
+
+    // Build per-day roster — include each employee's skills so the AI can
+    // verify keyholder/till/floor/replen coverage per shift directly.
     const allDays = [...new Set(parsedEmployees.flatMap(e => (e.shifts||[]).map(s=>s.day)))].sort();
     const dayRosters = allDays.map(day => {
       const onShift = parsedEmployees
         .filter(e => (e.shifts||[]).some(s => s.day === day && s.start && s.end))
         .map(e => {
           const sh = (e.shifts||[]).filter(s => s.day === day && s.start && s.end);
-          return `    ${e.name} [${e.area||'?'}] ${sh.map(s=>`${s.start}-${s.end}`).join(', ')}`;
+          const skills = (skillsIndex[e.name] || []).map(k => skillLabels[k] || k).join(', ');
+          return `    ${e.name} [${e.area||'?'}] ${sh.map(s=>`${s.start}-${s.end}`).join(', ')}${skills ? ` | Skills: ${skills}` : ''}`;
         });
       return `  ${day}:\n${onShift.join('\n') || '    (nobody scheduled)'}`;
     }).join('\n');
@@ -1000,7 +1025,10 @@ WEEKLY BUDGET: ${weeklyBudget}h | TOTAL SCHEDULED: ${totalScheduled}h | BUDGET S
 EMPLOYEE HOUR COMPARISON:
 ${empSummary}
 
-PER-DAY ROSTER (use this to check keyholder/till/floor/replen coverage for EACH day):
+EMPLOYEE SKILLS (use these to determine who can fill keyholder, till, floor, replen supervisor roles):
+${empSkillsSummary}
+
+PER-DAY ROSTER (use this to check keyholder/till/floor/replen coverage for EACH day — skills are listed inline):
 ${dayRosters}
 
 NOT FOUND IN SCHEDULE (${notFound.length}): ${notFound.map(e => e.name).join(', ') || 'none'}`,
