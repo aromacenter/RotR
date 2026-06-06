@@ -199,11 +199,17 @@ export default function Analyze() {
     if (customBudget) formData.append('weeklyBudget', customBudget);
     try {
       const res = await fetch('/api/analyze', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error');
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); } catch { data = null; }
+      if (!res.ok) {
+        const detail = data?.error || data?.message || (raw ? raw.slice(0, 300) : '');
+        throw new Error(detail || `Request failed (HTTP ${res.status})`);
+      }
+      if (!data) throw new Error('Server returned a non-JSON response (possibly a gateway timeout).');
       setResult(data);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || String(err));
     } finally {
       setLoading(false);
     }
