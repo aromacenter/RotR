@@ -127,13 +127,35 @@ function dayDisplayName(dayLabel) {
   return SHORT_TO_FULL[short] || dayLabel;
 }
 
+// Fixed department print order. Areas not listed here are appended at the end.
+const DEPT_ORDER = ['management', 'floor', 'customer service', 'till', 'replenishment', 'replen', 'pricing', 'cleaning'];
+function deptOrderIndex(area) {
+  const key = (area || 'other').toLowerCase();
+  const idx = DEPT_ORDER.indexOf(key);
+  return idx === -1 ? DEPT_ORDER.length : idx;
+}
+
 function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
   // Filter employees who have a shift on this exact day label (e.g. "Mon 02 Jun")
-  const working = employees.filter((emp) =>
-    (emp.shifts || []).some((s) => s.day === day)
-  );
+  const working = employees
+    .filter((emp) => (emp.shifts || []).some((s) => s.day === day))
+    .slice()
+    .sort((a, b) => {
+      const d = deptOrderIndex(a.area) - deptOrderIndex(b.area);
+      if (d !== 0) return d;
+      return a.name.localeCompare(b.name);
+    });
 
   if (working.length === 0) return null;
+
+  // Group consecutive employees by department for section headers/dividers
+  const groups = [];
+  for (const emp of working) {
+    const key = (emp.area || 'Other');
+    const last = groups[groups.length - 1];
+    if (last && last.key.toLowerCase() === key.toLowerCase()) last.items.push(emp);
+    else groups.push({ key, items: [emp] });
+  }
 
   return (
     <div style={{
@@ -157,45 +179,62 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
       {/* Hour axis */}
       <HourAxis />
 
-      {/* Employee rows */}
+      {/* Employee rows, grouped by department in fixed order */}
       <div>
-        {working.map((emp) => {
-          const color = getDeptColor(emp.area, deptMap);
-          const dayShifts = (emp.shifts || []).filter((s) => s.day === day);
+        {groups.map((group) => {
+          const color = getDeptColor(group.key, deptMap);
           return (
-            <div key={emp.name} style={{
-              display: 'flex',
-              alignItems: 'center',
-              borderBottom: '1px solid #f1f5f9',
-              minHeight: 26,
-            }}>
+            <div key={group.key}>
               <div style={{
-                width: 130,
-                flexShrink: 0,
-                fontSize: 10,
-                fontWeight: 600,
-                color: '#1e293b',
-                paddingRight: 6,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 0 3px 0', marginTop: 4,
               }}>
-                <span style={{
-                  display: 'inline-block',
-                  width: 8, height: 8,
-                  borderRadius: '50%',
-                  background: color.bar,
-                  marginRight: 4,
-                  flexShrink: 0,
-                }} />
-                {emp.name}
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: color.bar, display: 'inline-block' }} />
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {group.key}
+                </span>
+                <span style={{ fontSize: 9, color: '#94a3b8' }}>({group.items.length})</span>
               </div>
-              <div style={{ flex: 1, position: 'relative', height: 26 }}>
-                <GridLines />
-                {dayShifts.map((shift, i) => (
-                  <GanttBar key={i} start={shift.start} end={shift.end} color={color} />
-                ))}
-              </div>
+              {group.items.map((emp) => {
+                const dayShifts = (emp.shifts || []).filter((s) => s.day === day);
+                return (
+                  <div key={emp.name} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    borderBottom: '1px solid #f1f5f9',
+                    minHeight: 26,
+                  }}>
+                    <div style={{
+                      width: 130,
+                      flexShrink: 0,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: '#1e293b',
+                      paddingRight: 6,
+                      paddingLeft: 16,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      <span style={{
+                        display: 'inline-block',
+                        width: 8, height: 8,
+                        borderRadius: '50%',
+                        background: color.bar,
+                        marginRight: 4,
+                        flexShrink: 0,
+                      }} />
+                      {emp.name}
+                    </div>
+                    <div style={{ flex: 1, position: 'relative', height: 26 }}>
+                      <GridLines />
+                      {dayShifts.map((shift, i) => (
+                        <GanttBar key={i} start={shift.start} end={shift.end} color={color} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
