@@ -148,7 +148,27 @@ export default function Analyze() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [empListOpen, setEmpListOpen] = useState(true);
+  const [progressStep, setProgressStep] = useState('');
   const fileRef = useRef();
+
+  const PROGRESS_STEPS = [
+    t('analyzeProgressStep1') || 'Reading PDF…',
+    t('analyzeProgressStep2') || 'Parsing schedule…',
+    t('analyzeProgressStep3') || 'Comparing hours to contracts…',
+    t('analyzeProgressStep4') || 'Generating analysis…',
+  ];
+
+  useEffect(() => {
+    if (!loading) { setProgressStep(''); return; }
+    let i = 0;
+    setProgressStep(PROGRESS_STEPS[0]);
+    const id = setInterval(() => {
+      i = (i + 1) % PROGRESS_STEPS.length;
+      setProgressStep(PROGRESS_STEPS[i]);
+    }, 2200);
+    return () => clearInterval(id);
+  }, [loading]);
 
   useEffect(() => {
     fetch('/api/employees').then((r) => r.json()).then(setEmployees).catch(() => {});
@@ -195,6 +215,14 @@ export default function Analyze() {
 
   return (
     <div>
+      <style>{`
+        @keyframes analyzeProgressMove {
+          0% { transform: translateX(-100%); }
+          50% { transform: translateX(150%); }
+          100% { transform: translateX(-100%); }
+        }
+        .analyze-progress-bar { position: relative; }
+      `}</style>
       <div className="page-header">
         <h1 className="page-title">{t('analyzePage')}</h1>
         <p className="page-subtitle">{t('analyzeSubtitle')}</p>
@@ -257,7 +285,15 @@ export default function Analyze() {
 
         <div>
           <div className="card" style={{ marginBottom: 20 }}>
-            <div className="card-header"><div className="card-title">{t('analyzeEmployeesSummary')} ({employees.length})</div></div>
+            <div
+              className="card-header"
+              style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              onClick={() => setEmpListOpen((o) => !o)}
+            >
+              <div className="card-title">{t('analyzeEmployeesSummary')} ({employees.length})</div>
+              <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{empListOpen ? '▲' : '▼'}</span>
+            </div>
+            {empListOpen && (
             <div className="card-body">
               {employees.length === 0 ? (
                 <div style={{ color: 'var(--gray-400)', fontSize: 13 }}>{t('analyzeNoEmp')}</div>
@@ -272,6 +308,7 @@ export default function Analyze() {
                 </div>
               )}
             </div>
+            )}
           </div>
 
           <div className="card">
@@ -279,7 +316,20 @@ export default function Analyze() {
               <button className="btn btn-primary btn-full btn-lg" onClick={handleAnalyze} disabled={loading || !file || employees.length === 0}>
                 {loading ? <><span className="spinner" />{t('analyzeRunning')}</> : t('analyzeRunButton')}
               </button>
-              {loading && <div className="alert alert-info" style={{ marginTop: 12 }}>{t('analyzeAiWait')}</div>}
+              {loading && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ height: 8, borderRadius: 4, background: 'var(--gray-200)', overflow: 'hidden' }}>
+                    <div className="analyze-progress-bar" style={{
+                      height: '100%',
+                      width: '40%',
+                      borderRadius: 4,
+                      background: 'var(--primary)',
+                      animation: 'analyzeProgressMove 1.4s ease-in-out infinite',
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 8 }}>{progressStep}</div>
+                </div>
+              )}
             </div>
           </div>
         </div>
