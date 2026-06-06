@@ -309,21 +309,41 @@ export default function PrintView({ analysis, employees, onClose }) {
   });
 
   const handlePrint = () => {
+    // Build the print container as a SIBLING of the app root (a direct child
+    // of <body>), not nested inside it - "body > *:not(#print-root)" only
+    // matches direct children of <body>, so when the printable content lived
+    // inside #root the rule matched #root itself (since #root !== #print-root)
+    // and hid the entire app, including the content we wanted to print -
+    // resulting in a blank page both on-screen-print and in "Save as PDF".
     const style = document.createElement('style');
+    style.id = 'print-style-override';
     style.innerHTML = `
       @media print {
         body > *:not(#print-root) { display: none !important; }
-        #print-root { display: block !important; }
+        #print-root { display: block !important; position: static !important; }
         @page { size: A4 landscape; margin: 0; }
       }
+      #print-root { display: none; }
     `;
     document.head.appendChild(style);
-    const orig = document.getElementById('root').innerHTML;
-    document.getElementById('root').innerHTML = `<div id="print-root">${printRef.current.innerHTML}</div>`;
+
+    const printRoot = document.createElement('div');
+    printRoot.id = 'print-root';
+    printRoot.innerHTML = printRef.current.innerHTML;
+    document.body.appendChild(printRoot);
+
+    const cleanup = () => {
+      printRoot.remove();
+      style.remove();
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+
     window.print();
-    document.getElementById('root').innerHTML = orig;
-    document.head.removeChild(style);
-    window.location.reload();
+    // Safety-net cleanup in case 'afterprint' never fires (varies by browser) -
+    // generous delay so it doesn't yank the content while a slow "Save as PDF"
+    // dialog is still rendering.
+    setTimeout(cleanup, 60000);
   };
 
   return (
