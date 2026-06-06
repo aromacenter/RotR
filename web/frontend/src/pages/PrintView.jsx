@@ -137,9 +137,11 @@ function deptOrderIndex(area) {
 }
 
 function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
-  // Filter employees who have a shift on this exact day label (e.g. "Mon 02 Jun")
+  // Only include employees who have an ACTUAL shift (real start/end time) on
+  // this exact day label (e.g. "Mon 02 Jun") - day-off entries (start/end
+  // null) and other days must not produce empty rows on this page.
   const working = employees
-    .filter((emp) => (emp.shifts || []).some((s) => s.day === day))
+    .filter((emp) => (emp.shifts || []).some((s) => s.day === day && s.start && s.end))
     .slice()
     .sort((a, b) => {
       const d = deptOrderIndex(a.area) - deptOrderIndex(b.area);
@@ -199,7 +201,7 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
                 <span style={{ fontSize: 9, color: '#94a3b8' }}>({group.items.length})</span>
               </div>
               {group.items.map((emp) => {
-                const dayShifts = (emp.shifts || []).filter((s) => s.day === day);
+                const dayShifts = (emp.shifts || []).filter((s) => s.day === day && s.start && s.end);
                 return (
                   <div key={emp.name} style={{
                     display: 'flex',
@@ -257,7 +259,8 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
 }
 
 export default function PrintView({ analysis, employees, onClose }) {
-  const [printMode, setPrintMode] = React.useState('daily');
+  const [printMode, setPrintMode] = React.useState('single');
+  const [selectedDay, setSelectedDay] = React.useState(0);
   const printRef = useRef();
 
   // Merge employee area data from DB into analysis employees
@@ -327,13 +330,23 @@ export default function PrintView({ analysis, employees, onClose }) {
           <div>
             <label className="form-label" style={{ display: 'inline', marginRight: 8 }}>Print mode:</label>
             <select className="form-select" value={printMode} onChange={(e) => setPrintMode(e.target.value)} style={{ width: 'auto', display: 'inline-block' }}>
-              <option value="daily">Daily (one page per day)</option>
-              <option value="weekly">Weekly overview (all days)</option>
+              <option value="single">Single day (choose below)</option>
+              <option value="daily">All days (one page per day)</option>
             </select>
           </div>
+          {printMode === 'single' && (
+            <div>
+              <label className="form-label" style={{ display: 'inline', marginRight: 8 }}>Day:</label>
+              <select className="form-select" value={selectedDay} onChange={(e) => setSelectedDay(Number(e.target.value))} style={{ width: 'auto', display: 'inline-block' }}>
+                {dayLabels.map((day, i) => (
+                  <option key={day + i} value={i}>{dayDisplayName(day)} — {day}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <button className="btn btn-primary" onClick={handlePrint}>🖨️ Print</button>
           <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
-            Only employees scheduled that day are shown. Department colours match the legend.
+            Only employees with an actual shift that day are shown. Department colours match the legend.
           </div>
         </div>
       </div>
@@ -355,14 +368,14 @@ export default function PrintView({ analysis, employees, onClose }) {
 
       {/* Preview */}
       <div ref={printRef} style={{ background: 'white', border: '1px solid var(--gray-200)', borderRadius: 8, overflow: 'hidden' }}>
-        {dayLabels.map((day) => (
+        {(printMode === 'single' ? [dayLabels[selectedDay]] : dayLabels).map((day) => (
           <DayPage
             key={day}
             day={day}
             employees={enriched}
             deptMap={deptMap}
             weekLabel={analysis.weekLabel}
-            printMode={printMode}
+            printMode={printMode === 'single' ? 'single' : 'daily'}
           />
         ))}
       </div>
