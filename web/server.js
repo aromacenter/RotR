@@ -33,22 +33,95 @@ function timeToHours(start, end) {
   return Math.round(diff * 100) / 100;
 }
 
-function parseWorkcloudSchedule(pdfText, dbEmployees) {
-  const lines = pdfText.split('\n').map(l => l.trim());
+// Extracts text from a PDF while preserving each text item's x-coordinate, so
+// that table cells can be matched to the correct column by HORIZONTAL POSITION
+// rather than by guessing/counting - this is essential for the Workcloud
+// schedule grid where every row spans "Sun..Sat" columns and a naive
+// left-to-right token count silently misaligns whenever a cell is empty or
+// contains more than one time range (split shifts, meal breaks, etc).
+async function extractPositionedLines(buffer) {
+  const allLines = [];
+  await pdfParse(buffer, {
+    pagerender: (pageData) => pageData.getTextContent().then((tc) => {
+      const items = tc.items
+        .map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] }))
+        .filter(it => it.str && it.str.trim());
+      // Group into rows by Y proximity (PDF coordinates: same row = same y)
+      const rows = [];
+      const Y_TOL = 2.5;
+      for (const it of items) {
+        let row = rows.find(r => Math.abs(r.y - it.y) <= Y_TOL);
+        if (!row) { row = { y: it.y, items: [] }; rows.push(row); }
+        row.items.push(it);
+      }
+      // Top-to-bottom (PDF y grows upward), then left-to-right within a row
+      rows.sort((a, b) => b.y - a.y);
+      for (const row of rows) {
+        row.items.sort((a, b) => a.x - b.x);
+        let text = '';
+        const itemsWithOffsets = [];
+        for (const it of row.items) {
+          const start = text.length;
+          text += it.str;
+          itemsWithOffsets.push({ str: it.str, x: it.x, start, end: text.length });
+          text += ' ';
+        }
+        allLines.push({ text: text.trim(), items: itemsWithOffsets, y: row.y });
+      }
+      return rows.map(r => r.items.map(i => i.str).join(' ')).join('\n');
+    }),
+  });
+  return allLines;
+}
 
-  // Find column header line to determine date positions
-  // e.g. "07 Jun (Sun) 08 Jun (Mon) 09 Jun (Tue)..."
+// Given a line (with .items carrying character offsets + x-coordinates) and a
+// character index into line.text, returns the x-coordinate of the text item
+// that produced that character - i.e. "where on the page was this match".
+function xAtIndex(line, idx) {
+  for (const it of line.items) {
+    if (idx >= it.start && idx <= it.end) return it.x;
+  }
+  let best = null, bestDist = Infinity;
+  for (const it of line.items) {
+    const d = Math.min(Math.abs(it.start - idx), Math.abs(it.end - idx));
+    if (d < bestDist) { bestDist = d; best = it; }
+  }
+  return best ? best.x : 0;
+}
+
+function parseWorkcloudSchedule(positionedLines, dbEmployees) {
+  const lines = positionedLines;
+
+  // Find the column header row, e.g. "07 Jun (Sun)  08 Jun (Mon)  09 Jun (Tue)…"
+  // and record each date column's X position - every shift found later is
+  // matched against THESE positions (nearest column wins) rather than counted
+  // sequentially, so it always lands on the day it actually appears under.
   const headerLineIdx = lines.findIndex(l =>
-    /\d{2}\s+\w+\s+\(Sun\)/.test(l) || /\d{2}\s+\w+\s+\(Mon\)/.test(l)
+    /\d{2}\s+\w+\s+\(Sun\)/.test(l.text) || /\d{2}\s+\w+\s+\(Mon\)/.test(l.text)
   );
 
-  // Extract ordered day labels from header
-  let dayLabels = [];
+  let dayColumns = []; // [{ date, short, x }] sorted left-to-right (Sun..Sat)
   if (headerLineIdx >= 0) {
-    const header = lines[headerLineIdx];
-    const dayMatches = [...header.matchAll(/(\d{2}\s+\w{3})\s+\((\w{3})\)/g)];
-    dayLabels = dayMatches.map(m => ({ date: m[1], short: m[2] }));
+    const headerLine = lines[headerLineIdx];
+    const dayMatches = [...headerLine.text.matchAll(/(\d{2}\s+\w{3})\s+\((\w{3})\)/g)];
+    dayColumns = dayMatches.map(m => ({
+      date: m[1], short: m[2], x: xAtIndex(headerLine, m.index),
+    }));
+    dayColumns.sort((a, b) => a.x - b.x);
   }
+  // dayLabels kept for the "no header found" fallback path
+  const dayLabels = dayColumns;
+
+  // Resolve a page-x-coordinate to the nearest detected day column.
+  const dayForX = (x) => {
+    if (dayColumns.length === 0) return null;
+    let best = dayColumns[0], bestDist = Math.abs(best.x - x);
+    for (const c of dayColumns) {
+      const d = Math.abs(c.x - x);
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    return best;
+  };
 
   // Employee name pattern: "Lastname, Firstname" or "Lastname-Name, Firstname"
   const empNameRe = /^([A-Z][a-zA-ZÀ-ÖØ-öø-ÿ\-]+(?:\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+)?,\s*[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+(?:\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+)?)\s*(.*)/;
@@ -65,12 +138,12 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
   const parseLog = [];
 
   let currentName = null;
-  let currentLines = [];
+  let currentLineObjs = [];
 
   const flush = () => {
     if (!currentName) return;
-    const block = currentLines.join(' ');
-    const rawLinesSnapshot = currentLines.slice();
+    const block = currentLineObjs.map(l => l.text).join(' ');
+    const rawLinesSnapshot = currentLineObjs.map(l => l.text);
 
     // Extract total hours (last standalone HH:MM not followed by dash)
     // Note: no \b before the digits - PDF text extraction sometimes glues the
@@ -83,58 +156,58 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
       totalHours = h + m / 60;
     }
 
-    // Extract shifts – we'll assign days based on position in line sequence
-    // Each line that contains a shift time range is one shift
+    // Assign every shift / Day-Off entry to a day by comparing its X position
+    // on the page against the detected header-column X positions (nearest
+    // wins) - NOT by counting matches in sequence. This is robust against
+    // empty cells, split shifts (two ranges in one day), and stacked
+    // meal-break lines, all of which previously desynced a running counter
+    // and silently misassigned entire days.
     const shifts = [];
     const dayOffDays = [];
-    let dayIdx = 0;
-    // The first line begins with the employee's name; strip it so any shift
-    // times glued onto the same line (e.g. "Evans, Lynne 11:00 - 15:00...") are
-    // still picked up, while keeping the rest of the lines as-is.
-    const scanLines = currentLines.map((line, idx) =>
-      idx === 0 ? line.slice(currentName.length).trim() : line
-    );
-    for (const line of scanLines) {
-      if (/Day Off/i.test(line)) {
-        const wi = dayIdx % 7;
-        const day = dayLabels[wi]
-          ? `${dayLabels[wi].short} ${dayLabels[wi].date}`
-          : DAYS_ORDER[wi];
-        dayOffDays.push(day);
-        dayIdx++;
-        continue;
+    const fallbackDay = (x) => {
+      const col = dayForX(x);
+      return col ? `${col.short} ${col.date}` : null;
+    };
+
+    currentLineObjs.forEach((line, idx) => {
+      // The first line begins with the employee's name; strip it (and its
+      // x-offset) so shift times glued onto the same line are still matched
+      // at their correct page position.
+      let text = line.text;
+      let items = line.items;
+      if (idx === 0) {
+        const stripLen = currentName.length;
+        const sliced = line.text.slice(stripLen);
+        text = sliced.trim();
+        const offset = stripLen + (sliced.length - sliced.trimStart().length);
+        items = line.items
+          .filter(it => it.end > offset)
+          .map(it => ({ ...it, start: Math.max(0, it.start - offset), end: Math.max(0, it.end - offset) }));
       }
-      // Capture ANY parenthetical annotation after the time range (e.g. "(TL)",
-      // "(m)") - the previous "[^)m]" exclusion meant "(m)" never matched the
-      // optional group at all, so meal-break rows slipped through as real
-      // shifts (counted in totals AND consumed a day slot, misaligning every
-      // subsequent day - the root cause of bogus day labels and wrong totals).
-      const shiftMatches = [...line.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)]+)\))?/g)];
-      // IMPORTANT: a single day's cell can contain more than one real time
-      // range (split shifts, e.g. "07:00-11:00" + "15:00-19:00" both on the
-      // same day) as well as a stacked meal-break line. Previously dayIdx was
-      // incremented once PER MATCH, so any day with a split shift consumed an
-      // extra day-slot and pushed every later day in the week one column to
-      // the right - silently dropping some days (their data landed on the
-      // wrong day, e.g. Friday's shifts got recorded as Thursday's, leaving
-      // Friday/Monday empty) and duplicating others. One scanned line/cell ==
-      // one day, regardless of how many real shift ranges it contains.
-      let realCount = 0;
-      const wi = dayIdx % 7;
-      const day = dayLabels[wi]
-        ? `${dayLabels[wi].short} ${dayLabels[wi].date}`
-        : DAYS_ORDER[wi];
+      const lineObj = { text, items };
+
+      const dayOffRe = /Day Off/ig;
+      let m;
+      while ((m = dayOffRe.exec(text))) {
+        const day = fallbackDay(xAtIndex(lineObj, m.index));
+        if (day) dayOffDays.push(day);
+      }
+
+      // Capture ANY parenthetical annotation after the time range (e.g.
+      // "(TL)", "(m)") so meal breaks ("(m)") can be reliably identified and
+      // skipped - they must never be counted as a shift nor placed on the
+      // timeline (the previous "[^)m]" exclusion meant "(m)" never matched
+      // the optional group, so breaks slipped through as real shifts).
+      const shiftMatches = [...text.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)]+)\))?/g)];
       for (const sm of shiftMatches) {
         const code = (sm[3] || '').trim().toLowerCase();
-        if (code === 'm') continue; // skip meal breaks - never count, never consume a day slot
+        if (code === 'm') continue; // skip meal breaks entirely
         const h = timeToHours(sm[1], sm[2]);
-        if (h > 0) {
-          shifts.push({ day, start: sm[1], end: sm[2], hours: h, code });
-          realCount++;
-        }
+        if (h <= 0) continue;
+        const day = fallbackDay(xAtIndex(lineObj, sm.index));
+        if (day) shifts.push({ day, start: sm[1], end: sm[2], hours: h, code });
       }
-      if (realCount > 0) dayIdx++;
-    }
+    });
 
     parsed[currentName] = { totalHours, shifts, dayOffDays };
     parseLog.push({
@@ -145,7 +218,7 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
       dayOff: dayOffDays.slice(),
     });
     currentName = null;
-    currentLines = [];
+    currentLineObjs = [];
   };
 
   // Some PDF text extractions glue a department-summary row directly onto the
@@ -154,30 +227,34 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
   // the employee's shift/total parsing.
   const DEPT_GLUE_RE = /(Management|Customer Service|Floor|Replenishment|Pricing|Cleaning)\d/i;
   const stripDeptGlue = (line) => {
-    const m = line.match(DEPT_GLUE_RE);
-    return m ? line.slice(0, m.index).trim() : line;
+    const m = line.text.match(DEPT_GLUE_RE);
+    if (!m) return line;
+    return {
+      text: line.text.slice(0, m.index).trim(),
+      items: line.items.filter(it => it.start < m.index),
+    };
   };
 
   for (const rawLine of lines) {
-    if (!rawLine) continue;
-    const lower = rawLine.toLowerCase();
-    if (SECTION_HEADERS.has(lower) || /^workcloud/i.test(rawLine) || /^printed on/i.test(rawLine)) {
+    if (!rawLine.text) continue;
+    const lower = rawLine.text.toLowerCase();
+    if (SECTION_HEADERS.has(lower) || /^workcloud/i.test(rawLine.text) || /^printed on/i.test(rawLine.text)) {
       flush();
       continue;
     }
     // Pure glued department-summary line (no employee name) - skip entirely
-    if (DEPT_GLUE_RE.test(rawLine) && !empNameRe.test(rawLine)) continue;
+    if (DEPT_GLUE_RE.test(rawLine.text) && !empNameRe.test(rawLine.text)) continue;
 
     const line = stripDeptGlue(rawLine);
-    if (!line) continue;
+    if (!line.text) continue;
 
-    const empMatch = line.match(empNameRe);
+    const empMatch = line.text.match(empNameRe);
     if (empMatch) {
       flush();
       currentName = empMatch[1].trim();
-      currentLines = [line];
+      currentLineObjs = [line];
     } else if (currentName) {
-      currentLines.push(line);
+      currentLineObjs.push(line);
     }
   }
   flush();
@@ -228,7 +305,7 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
   // log without changing the function's primary return shape.
   result.parseLog = parseLog;
   result.detectedDayLabels = dayLabels.map(d => `${d.short} ${d.date}`);
-  result.headerLineFound = headerLineIdx >= 0 ? lines[headerLineIdx] : null;
+  result.headerLineFound = headerLineIdx >= 0 ? lines[headerLineIdx].text : null;
 
   return result;
 }
@@ -536,11 +613,13 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const budgetRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');
     const weeklyBudget = customBudget ?? (budgetRow ? Number(budgetRow.value) : 0);
 
-    // Parse PDF text
+    // Parse PDF text - extracted WITH x/y position data so table cells can be
+    // matched to the correct day column by their actual on-page position.
+    let positionedLines;
     let pdfText;
     try {
-      const data = await pdfParse(req.file.buffer);
-      pdfText = data.text;
+      positionedLines = await extractPositionedLines(req.file.buffer);
+      pdfText = positionedLines.map(l => l.text).join('\n');
     } catch (e) {
       return res.status(400).json({ error: 'Nem sikerült feldolgozni a PDF fájlt: ' + e.message });
     }
@@ -562,7 +641,7 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const customInstructions = promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT;
 
     // ── Step 1: Parse schedule with built-in Workcloud parser (no AI needed) ──
-    const parsedEmployees = parseWorkcloudSchedule(pdfText, employees);
+    const parsedEmployees = parseWorkcloudSchedule(positionedLines, employees);
     const totalScheduled = Math.round(parsedEmployees.reduce((s, e) => s + e.scheduledHours, 0) * 100) / 100;
     const budgetDiff = Math.round((totalScheduled - weeklyBudget) * 100) / 100;
     const budgetStatus = budgetDiff > 0.5 ? 'over' : budgetDiff < -0.5 ? 'under' : 'ok';
