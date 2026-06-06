@@ -254,7 +254,7 @@ export default function Analyze() {
   const { t, lang } = useLang();
   const [employees, setEmployees] = useState([]);
   const [settings, setSettings] = useState({ weeklyBudget: 0 });
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]); // up to 7 (one per day of the week)
   const [dragOver, setDragOver] = useState(false);
   const [weekLabel, setWeekLabel] = useState('');
   const [customBudget, setCustomBudget] = useState('');
@@ -296,19 +296,30 @@ export default function Analyze() {
     setWeekLabel(`${sundayStart.getFullYear()} ${fmt(sundayStart)} – ${fmt(saturdayEnd)}`);
   }, [lang]);
 
+  const addFiles = (list) => {
+    const pdfs = Array.from(list).filter((f) => f.type === 'application/pdf');
+    if (pdfs.length === 0) { setError(t('analyzeNoPdf')); return; }
+    setFiles((prev) => {
+      const merged = [...prev, ...pdfs].filter((f, i, arr) =>
+        arr.findIndex((g) => g.name === f.name && g.size === f.size) === i
+      );
+      return merged.slice(0, 7);
+    });
+    setError('');
+  };
+  const removeFile = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+
   const handleDrop = (e) => {
     e.preventDefault(); setDragOver(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped?.type === 'application/pdf') { setFile(dropped); setError(''); }
-    else setError(t('analyzeNoPdf'));
+    addFiles(e.dataTransfer.files);
   };
 
   const handleAnalyze = async () => {
-    if (!file) { setError(t('analyzeNoPdf')); return; }
+    if (files.length === 0) { setError(t('analyzeNoPdf')); return; }
     if (employees.length === 0) { setError(t('analyzeNoEmp')); return; }
     setLoading(true); setError('');
     const formData = new FormData();
-    formData.append('pdf', file);
+    files.forEach((f) => formData.append('pdf', f));
     formData.append('weekLabel', weekLabel);
     if (customBudget) formData.append('weeklyBudget', customBudget);
     try {
@@ -329,7 +340,7 @@ export default function Analyze() {
     }
   };
 
-  if (result) return <AnalysisResult result={result} employees={employees} onClose={() => { setResult(null); setFile(null); }} />;
+  if (result) return <AnalysisResult result={result} employees={employees} onClose={() => { setResult(null); setFiles([]); }} />;
 
   const effectiveBudget = parseFloat(customBudget) || settings.weeklyBudget || 0;
 
@@ -361,27 +372,39 @@ export default function Analyze() {
             <div className="card-header"><div className="card-title">{t('analyzePdfUpload')}</div></div>
             <div className="card-body">
               <div
-                className={`upload-zone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+                className={`upload-zone ${dragOver ? 'drag-over' : ''} ${files.length ? 'has-file' : ''}`}
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 onClick={() => fileRef.current?.click()}
               >
-                <input ref={fileRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files[0]; if (f) { setFile(f); setError(''); } }} />
-                {file ? (
+                <input ref={fileRef} type="file" accept=".pdf" multiple style={{ display: 'none' }} onChange={(e) => { if (e.target.files.length) addFiles(e.target.files); e.target.value = ''; }} />
+                {files.length > 0 ? (
                   <>
                     <div className="upload-icon">✅</div>
-                    <div className="upload-filename">{file.name}</div>
-                    <div className="upload-hint">({(file.size / 1024).toFixed(0)} KB) – {t('analyzePdfReplace')}</div>
+                    <div className="upload-filename">
+                      {files.length === 1 ? files[0].name : `${files.length} PDF ${lang === 'hu' ? 'fájl kiválasztva' : 'files selected'}`}
+                    </div>
+                    <div className="upload-hint">{t('analyzePdfReplace')} {lang === 'hu' ? '· akár 7 fájl (heti = napi bontásban)' : '· up to 7 files (e.g. one per day for a full week)'}</div>
                   </>
                 ) : (
                   <>
                     <div className="upload-icon">📄</div>
                     <div className="upload-text">{t('analyzeDragDrop')}</div>
-                    <div className="upload-hint">{t('analyzePdfHint')}</div>
+                    <div className="upload-hint">{t('analyzePdfHint')} {lang === 'hu' ? '· tölthetsz fel akár 7 napi fájlt egyszerre egy teljes hét összeállításához' : '· you can upload up to 7 daily files at once to build a full week'}</div>
                   </>
                 )}
               </div>
+              {files.length > 0 && (
+                <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0' }}>
+                  {files.map((f, i) => (
+                    <li key={`${f.name}-${f.size}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'var(--surface-2, #f3f4f6)', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                      <span>📄 {f.name} <span style={{ opacity: 0.6 }}>({(f.size / 1024).toFixed(0)} KB)</span></span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); removeFile(i); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger, #dc2626)', fontWeight: 600 }}>✕</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 
@@ -433,7 +456,7 @@ export default function Analyze() {
 
           <div className="card">
             <div className="card-body">
-              <button className="btn btn-primary btn-full btn-lg" onClick={handleAnalyze} disabled={loading || !file || employees.length === 0}>
+              <button className="btn btn-primary btn-full btn-lg" onClick={handleAnalyze} disabled={loading || files.length === 0 || employees.length === 0}>
                 {loading ? <><span className="spinner" />{t('analyzeRunning')}</> : t('analyzeRunButton')}
               </button>
               {loading && (

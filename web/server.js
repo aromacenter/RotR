@@ -812,9 +812,10 @@ app.post('/api/settings', requireAuth, async (req, res) => {
 
 // ─── Analysis ─────────────────────────────────────────────────────────────────
 
-app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => {
+app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Nincs PDF fájl csatolva' });
+    const files = req.files && req.files.length ? req.files : (req.file ? [req.file] : []);
+    if (!files.length) return res.status(400).json({ error: 'Nincs PDF fájl csatolva' });
 
     const employees = db.prepare('SELECT * FROM employees ORDER BY name COLLATE NOCASE').all();
     if (employees.length === 0) {
@@ -826,22 +827,79 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const budgetRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');
     const weeklyBudget = customBudget ?? (budgetRow ? Number(budgetRow.value) : 0);
 
-    // Parse PDF text - extracted WITH x/y position data so table cells can be
-    // matched to the correct day column by their actual on-page position.
-    let positionedLines;
-    let pdfText;
-    try {
-      positionedLines = await extractPositionedLines(req.file.buffer);
-      pdfText = positionedLines.map(l => l.text).join('\n');
-    } catch (e) {
-      return res.status(400).json({ error: 'Nem sikerült feldolgozni a PDF fájlt: ' + e.message });
+    // Parse every uploaded PDF (allows uploading up to 7 daily reports at
+    // once - one per day of the week - and combining them into a single
+    // weekly analysis) - extracted WITH x/y position data so table cells can
+    // be matched to the correct day column by their actual on-page position.
+    const perFileParsed = [];
+    for (const f of files) {
+      let positionedLines, pdfText;
+      try {
+        positionedLines = await extractPositionedLines(f.buffer);
+        pdfText = positionedLines.map(l => l.text).join('\n');
+      } catch (e) {
+        return res.status(400).json({ error: `Nem sikerült feldolgozni a(z) "${f.originalname}" PDF fájlt: ` + e.message });
+      }
+      if (!pdfText || pdfText.trim().length < 20) {
+        return res.status(400).json({
+          error: `Nem sikerült szöveget kinyerni a(z) "${f.originalname}" fájlból. Ellenőrizd, hogy a fájl nem szkennelt kép-e.`,
+        });
+      }
+      const parsed = looksLikeDailySummary(positionedLines)
+        ? parseDailyStoreSchedule(positionedLines, employees)
+        : parseWorkcloudSchedule(positionedLines, employees);
+      perFileParsed.push({ filename: f.originalname, parsed });
     }
 
-    if (!pdfText || pdfText.trim().length < 20) {
-      return res.status(400).json({
-        error: 'Nem sikerült szöveget kinyerni a PDF-ből. Ellenőrizd, hogy a fájl nem szkennelt kép-e.',
-      });
-    }
+    // Merge results from all uploaded files into one weekly view: sum each
+    // employee's scheduled hours and concatenate their shifts (each shift
+    // already carries its own day label, resolved independently per file -
+    // e.g. one file per day of the week), then recompute status against the
+    // (weekly) contracted hours once over the combined total.
+    const parsedEmployees = (() => {
+      if (perFileParsed.length === 1) return perFileParsed[0].parsed;
+      const byName = new Map();
+      for (const emp of employees) {
+        byName.set(emp.name, { name: emp.name, contractedHours: emp.contracted_hours, scheduledHours: 0, shifts: [] });
+      }
+      const parseLog = [];
+      const detectedDayLabels = [];
+      for (const { filename, parsed } of perFileParsed) {
+        for (const e of parsed) {
+          const acc = byName.get(e.name);
+          if (!acc) continue;
+          acc.scheduledHours = Math.round((acc.scheduledHours + (e.scheduledHours || 0)) * 100) / 100;
+          acc.shifts.push(...(e.shifts || []));
+        }
+        for (const entry of (parsed.parseLog || [])) parseLog.push({ ...entry, sourceFile: filename });
+        for (const d of (parsed.detectedDayLabels || [])) {
+          if (!detectedDayLabels.includes(d)) detectedDayLabels.push(d);
+        }
+      }
+      const merged = [];
+      for (const emp of employees) {
+        const acc = byName.get(emp.name);
+        const diff = Math.round((acc.scheduledHours - emp.contracted_hours) * 100) / 100;
+        merged.push({
+          name: emp.name,
+          scheduledHours: acc.scheduledHours,
+          contractedHours: emp.contracted_hours,
+          difference: diff,
+          status: acc.shifts.length === 0 ? 'not_found'
+            : diff > 0.25 ? 'over'
+            : diff < -0.25 ? 'under'
+            : 'ok',
+          shifts: acc.shifts,
+        });
+      }
+      merged.parseLog = parseLog;
+      merged.detectedDayLabels = detectedDayLabels;
+      merged.headerLineFound = perFileParsed.map(p => p.parsed.headerLineFound).filter(Boolean).join(' | ');
+      merged.isDailyFormat = perFileParsed.every(p => p.parsed.isDailyFormat);
+      merged.dayLabel = null;
+      merged.mergedFromFiles = perFileParsed.map(p => p.filename);
+      return merged;
+    })();
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -853,10 +911,6 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const promptRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('analysis_prompt');
     const customInstructions = promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT;
 
-    // ── Step 1: Parse schedule with built-in Workcloud parser (no AI needed) ──
-    const parsedEmployees = looksLikeDailySummary(positionedLines)
-      ? parseDailyStoreSchedule(positionedLines, employees)
-      : parseWorkcloudSchedule(positionedLines, employees);
     const totalScheduled = Math.round(parsedEmployees.reduce((s, e) => s + e.scheduledHours, 0) * 100) / 100;
     const budgetDiff = Math.round((totalScheduled - weeklyBudget) * 100) / 100;
     const budgetStatus = budgetDiff > 0.5 ? 'over' : budgetDiff < -0.5 ? 'under' : 'ok';
@@ -946,7 +1000,7 @@ Write plain English paragraphs (no JSON, no markdown headers, no bullet symbols)
 
     db.prepare(
       `INSERT INTO analyses (week_label, filename, result_json, created_at) VALUES (?, ?, ?, datetime('now'))`
-    ).run(weekLabel, req.file.originalname, JSON.stringify(analysis));
+    ).run(weekLabel, files.map(f => f.originalname).join(', '), JSON.stringify(analysis));
 
     res.json(analysis);
   } catch (e) {
