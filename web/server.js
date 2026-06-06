@@ -780,11 +780,16 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
 
 const DEFAULT_ANALYSIS_PROMPT = `You are a rota scheduling analyst reviewing a Zebra Workcloud weekly schedule export.
 
+STORE HOURS (opening times — only count staff who are on shift DURING store hours):
+- Monday to Saturday: store opens 06:00
+- Sunday: store opens 08:00 (NOT 06:00) — any employee whose shift starts before 08:00 on Sunday is working before the store is open and must NOT be counted toward daytime coverage rules on Sunday.
+
 MANDATORY COVERAGE RULES (flag as a violation if not met):
 1. EVERY shift (day or night) must have at least: 1 Keyholder, 2 Till staff, 1 Floor member.
 2. NIGHT shifts must have: 1 Keyholder AND at least 4 Replenishment staff.
-3. A "Keyholder" is any Management-area employee or an employee whose name/code indicates keyholder responsibility.
-4. If no Keyholder is on shift — flag it explicitly as a CRITICAL issue.
+3. A "Keyholder" is any Management-area employee or an employee with the Keyholder skill badge.
+4. If no Keyholder is on shift during store hours — flag it explicitly as a CRITICAL issue.
+5. On SUNDAY, do not count any employee scheduled before 08:00 toward the coverage rules — the store is closed until 08:00.
 
 OUTPUT FORMAT — write two clearly separated sections, ENGLISH first then HUNGARIAN:
 
@@ -1042,10 +1047,28 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
         return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
       });
 
+    // Store opening time per weekday (minutes from midnight)
+    const storeOpenMinutes = (day) => {
+      const isSunday = (day || '').toLowerCase().startsWith('sun');
+      return isSunday ? 8 * 60 : 6 * 60; // Sun 08:00, Mon-Sat 06:00
+    };
+
     const coverageMatrix = allDays.map(day => {
-      // All employees with at least one real shift this day
+      const openAt = storeOpenMinutes(day);
+      // Only count employees whose shift overlaps with store-open hours.
+      // On Sundays a shift that ends at or before 08:00 is pre-opening
+      // (e.g. a night-replen finishing at 07:00) and must not count toward
+      // daytime coverage rules for that day.
       const onShift = parsedEmployees.filter(e =>
-        (e.shifts||[]).some(s => s.day === day && s.start && s.end)
+        (e.shifts||[]).some(s => {
+          if (s.day !== day || !s.start || !s.end) return false;
+          const endMin = toMinutes(s.end);
+          const startMin = toMinutes(s.start);
+          // Overnight shift (end < start) always overlaps store hours
+          if (endMin < startMin) return true;
+          // Day shift: must end after store opens
+          return endMin > openAt;
+        })
       );
       const skills = (emp) => skillsIndex[emp.name] || [];
       const area = (emp) => (emp.area || '').toLowerCase();
