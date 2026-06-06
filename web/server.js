@@ -317,20 +317,50 @@ function parseWorkcloudSchedule(positionedLines, dbEmployees) {
   }
   flush();
 
-  // Match parsed entries to DB employees (fuzzy surname match)
+  // Match parsed entries to DB employees. Names extracted from the PDF often
+  // differ from the DB record in whitespace, accents, hyphenation or
+  // abbreviated first names (e.g. "Phillips-Slatcher, Heidi" vs.
+  // "Phillips Slatcher, Heidi J"), so plain string equality misses too many -
+  // normalize (strip accents/punctuation, collapse whitespace, lowercase) and
+  // compare surname + first-name-prefix instead of requiring an exact match.
+  const norm = (s) => (s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip accents
+    .toLowerCase()
+    .replace(/[^a-z,\s]/g, ' ') // punctuation/hyphens -> space (keep comma as separator)
+    .replace(/\s+/g, ' ')
+    .trim();
+  const nameParts = (s) => {
+    const n = norm(s);
+    const [surnameRaw, firstRaw] = n.split(',').map((p) => (p || '').trim());
+    return {
+      surname: (surnameRaw || '').replace(/\s+/g, ''), // "phillips slatcher" -> "phillipsslatcher"
+      first: (firstRaw || '').split(' ')[0] || '', // first token of given name(s)
+    };
+  };
+  const parsedKeys = Object.keys(parsed);
+  const parsedPartsByKey = {};
+  for (const k of parsedKeys) parsedPartsByKey[k] = nameParts(k);
+
   const result = [];
   for (const dbEmp of dbEmployees) {
-    const dbSurname = dbEmp.name.split(',')[0]?.trim().toLowerCase() || '';
-    // Try exact match first
-    let match = parsed[dbEmp.name];
-    // Try fuzzy surname match
-    if (!match) {
-      const key = Object.keys(parsed).find(k =>
-        k.toLowerCase() === dbEmp.name.toLowerCase() ||
-        k.split(',')[0]?.trim().toLowerCase() === dbSurname
-      );
-      if (key) match = parsed[key];
+    const dbParts = nameParts(dbEmp.name);
+    let match = null;
+    // 1) exact normalized match
+    let key = parsedKeys.find((k) => norm(k) === norm(dbEmp.name));
+    // 2) same surname AND matching first-name prefix (handles abbreviations)
+    if (!key) {
+      key = parsedKeys.find((k) => {
+        const p = parsedPartsByKey[k];
+        if (!p.surname || p.surname !== dbParts.surname) return false;
+        if (!p.first || !dbParts.first) return true;
+        return p.first === dbParts.first || p.first.startsWith(dbParts.first) || dbParts.first.startsWith(p.first);
+      });
     }
+    // 3) last resort: surname match alone
+    if (!key) {
+      key = parsedKeys.find((k) => parsedPartsByKey[k].surname && parsedPartsByKey[k].surname === dbParts.surname);
+    }
+    if (key) match = parsed[key];
 
     // "Day Off" entries count as (contracted hours / contracted work days per week)
     // — i.e. the average daily hours the employee would have worked that day.
