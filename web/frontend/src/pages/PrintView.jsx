@@ -322,6 +322,15 @@ export default function PrintView({ analysis, employees, onClose }) {
         body > *:not(#print-root) { display: none !important; }
         #print-root { display: block !important; position: static !important; }
         @page { size: A4 landscape; margin: 0; }
+        /* Browsers omit background colours/images when printing by default
+           (to save ink) - that's why the coloured Gantt bars and legend swatches
+           rendered as plain white/grey on paper and in "Save as PDF". Force
+           exact colour reproduction so the printout matches the on-screen view. */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
       }
       #print-root { display: none; }
     `;
