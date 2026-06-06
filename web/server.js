@@ -104,19 +104,30 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
       // shifts (counted in totals AND consumed a day slot, misaligning every
       // subsequent day - the root cause of bogus day labels and wrong totals).
       const shiftMatches = [...line.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)]+)\))?/g)];
+      // IMPORTANT: a single day's cell can contain more than one real time
+      // range (split shifts, e.g. "07:00-11:00" + "15:00-19:00" both on the
+      // same day) as well as a stacked meal-break line. Previously dayIdx was
+      // incremented once PER MATCH, so any day with a split shift consumed an
+      // extra day-slot and pushed every later day in the week one column to
+      // the right - silently dropping some days (their data landed on the
+      // wrong day, e.g. Friday's shifts got recorded as Thursday's, leaving
+      // Friday/Monday empty) and duplicating others. One scanned line/cell ==
+      // one day, regardless of how many real shift ranges it contains.
+      let realCount = 0;
+      const wi = dayIdx % 7;
+      const day = dayLabels[wi]
+        ? `${dayLabels[wi].short} ${dayLabels[wi].date}`
+        : DAYS_ORDER[wi];
       for (const sm of shiftMatches) {
         const code = (sm[3] || '').trim().toLowerCase();
         if (code === 'm') continue; // skip meal breaks - never count, never consume a day slot
         const h = timeToHours(sm[1], sm[2]);
         if (h > 0) {
-          const wi = dayIdx % 7;
-          const day = dayLabels[wi]
-            ? `${dayLabels[wi].short} ${dayLabels[wi].date}`
-            : DAYS_ORDER[wi];
           shifts.push({ day, start: sm[1], end: sm[2], hours: h, code });
+          realCount++;
         }
-        dayIdx++;
       }
+      if (realCount > 0) dayIdx++;
     }
 
     parsed[currentName] = { totalHours, shifts, dayOffDays };
