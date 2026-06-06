@@ -77,9 +77,17 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
     // Extract shifts – we'll assign days based on position in line sequence
     // Each line that contains a shift time range is one shift
     const shifts = [];
+    const dayOffDays = [];
     let dayIdx = 0;
     for (const line of currentLines.slice(1)) { // skip name line
-      if (/Day Off/i.test(line)) { dayIdx++; continue; }
+      if (/Day Off/i.test(line)) {
+        const day = dayLabels[dayIdx]
+          ? `${dayLabels[dayIdx].short} ${dayLabels[dayIdx].date}`
+          : DAYS_ORDER[dayIdx] || `Day${dayIdx + 1}`;
+        dayOffDays.push(day);
+        dayIdx++;
+        continue;
+      }
       const shiftMatches = [...line.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)m][^)]*)\))?/g)];
       for (const sm of shiftMatches) {
         const code = sm[3] || '';
@@ -95,7 +103,7 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
       }
     }
 
-    parsed[currentName] = { totalHours, shifts };
+    parsed[currentName] = { totalHours, shifts, dayOffDays };
     currentName = null;
     currentLines = [];
   };
@@ -149,18 +157,29 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
       if (key) match = parsed[key];
     }
 
-    const scheduled = match?.totalHours ?? 0;
+    // "Day Off" entries count as (contracted hours / contracted work days per week)
+    // — i.e. the average daily hours the employee would have worked that day.
+    const dayOffDays = match?.dayOffDays || [];
+    const perDayOffHours = dbEmp.work_days > 0
+      ? Math.round((dbEmp.contracted_hours / dbEmp.work_days) * 100) / 100
+      : 0;
+    const dayOffTotal = Math.round(perDayOffHours * dayOffDays.length * 100) / 100;
+    const dayOffShifts = dayOffDays.map((day) => ({
+      day, start: null, end: null, hours: perDayOffHours, code: 'day_off',
+    }));
+
+    const scheduled = Math.round(((match?.totalHours ?? 0) + dayOffTotal) * 100) / 100;
     const diff = Math.round((scheduled - dbEmp.contracted_hours) * 100) / 100;
     result.push({
       name: dbEmp.name,
       scheduledHours: scheduled,
       contractedHours: dbEmp.contracted_hours,
       difference: diff,
-      status: scheduled === 0 ? 'not_found'
+      status: (match?.totalHours ?? 0) === 0 && dayOffDays.length === 0 ? 'not_found'
         : diff > 0.25 ? 'over'
         : diff < -0.25 ? 'under'
         : 'ok',
-      shifts: match?.shifts || [],
+      shifts: [...(match?.shifts || []), ...dayOffShifts],
     });
   }
 
