@@ -90,9 +90,10 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
     );
     for (const line of scanLines) {
       if (/Day Off/i.test(line)) {
-        const day = dayLabels[dayIdx]
-          ? `${dayLabels[dayIdx].short} ${dayLabels[dayIdx].date}`
-          : DAYS_ORDER[dayIdx] || `Day${dayIdx + 1}`;
+        const wi = dayIdx % 7;
+        const day = dayLabels[wi]
+          ? `${dayLabels[wi].short} ${dayLabels[wi].date}`
+          : DAYS_ORDER[wi];
         dayOffDays.push(day);
         dayIdx++;
         continue;
@@ -103,9 +104,10 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
         if (code === 'm') continue; // skip meal breaks
         const h = timeToHours(sm[1], sm[2]);
         if (h > 0) {
-          const day = dayLabels[dayIdx]
-            ? `${dayLabels[dayIdx].short} ${dayLabels[dayIdx].date}`
-            : DAYS_ORDER[dayIdx] || `Day${dayIdx + 1}`;
+          const wi = dayIdx % 7;
+          const day = dayLabels[wi]
+            ? `${dayLabels[wi].short} ${dayLabels[wi].date}`
+            : DAYS_ORDER[wi];
           shifts.push({ day, start: sm[1], end: sm[2], hours: h, code });
         }
         dayIdx++;

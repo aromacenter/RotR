@@ -182,12 +182,13 @@ export default function Analyze() {
     fetch('/api/employees').then((r) => r.json()).then(setEmployees).catch(() => {});
     fetch('/api/settings/public').then((r) => r.json()).then(setSettings).catch(() => {});
     const now = new Date();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - now.getDay() + 1);
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    // English financial-year week: starts Sunday, ends Saturday.
+    const sundayStart = new Date(now);
+    sundayStart.setDate(now.getDate() - now.getDay());
+    const saturdayEnd = new Date(sundayStart); saturdayEnd.setDate(sundayStart.getDate() + 6);
     const locale = lang === 'en' ? 'en-GB' : 'hu-HU';
     const fmt = (d) => d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
-    setWeekLabel(`${monday.getFullYear()} ${fmt(monday)} – ${fmt(sunday)}`);
+    setWeekLabel(`${sundayStart.getFullYear()} ${fmt(sundayStart)} – ${fmt(saturdayEnd)}`);
   }, [lang]);
 
   const handleDrop = (e) => {

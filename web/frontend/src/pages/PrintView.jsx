@@ -284,7 +284,8 @@ export default function PrintView({ analysis, employees, onClose }) {
       if (s.day && !dayLabels.includes(s.day)) dayLabels.push(s.day);
     }
   }
-  const WEEKDAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  // English financial-year week: Sunday is the first day, Saturday the last.
+  const WEEKDAY_ORDER = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   dayLabels.sort((a, b) => {
     const ia = WEEKDAY_ORDER.indexOf((a || '').slice(0, 3).toLowerCase());
     const ib = WEEKDAY_ORDER.indexOf((b || '').slice(0, 3).toLowerCase());
