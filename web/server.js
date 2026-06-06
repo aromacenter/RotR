@@ -67,7 +67,10 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
     const block = currentLines.join(' ');
 
     // Extract total hours (last standalone HH:MM not followed by dash)
-    const totalMatch = block.match(/\b(\d{1,3}:\d{2})\s*$/);
+    // Note: no \b before the digits - PDF text extraction sometimes glues the
+    // total directly onto the previous time (e.g. "...20:0012:00"), which would
+    // otherwise prevent a word-boundary match.
+    const totalMatch = block.match(/(\d{2}:\d{2})\s*$/);
     let totalHours = 0;
     if (totalMatch) {
       const [h, m] = totalMatch[1].split(':').map(Number);
@@ -79,7 +82,13 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
     const shifts = [];
     const dayOffDays = [];
     let dayIdx = 0;
-    for (const line of currentLines.slice(1)) { // skip name line
+    // The first line begins with the employee's name; strip it so any shift
+    // times glued onto the same line (e.g. "Evans, Lynne 11:00 - 15:00...") are
+    // still picked up, while keeping the rest of the lines as-is.
+    const scanLines = currentLines.map((line, idx) =>
+      idx === 0 ? line.slice(currentName.length).trim() : line
+    );
+    for (const line of scanLines) {
       if (/Day Off/i.test(line)) {
         const day = dayLabels[dayIdx]
           ? `${dayLabels[dayIdx].short} ${dayLabels[dayIdx].date}`
