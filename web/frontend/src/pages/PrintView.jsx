@@ -55,8 +55,17 @@ function timeToFraction(timeStr) {
 }
 
 function GanttBar({ start, end, color }) {
-  const left = Math.max(0, timeToFraction(start) * 100);
-  const right = Math.min(100, timeToFraction(end) * 100);
+  const startFrac = timeToFraction(start);
+  const endFrac = timeToFraction(end);
+  const left = Math.max(0, startFrac * 100);
+  // Overnight shifts (e.g. 22:00–06:00) end before they start on the same
+  // axis - the chart only spans START_HOUR..END_HOUR, so the end time wraps
+  // to the next day and would compute as a smaller/negative fraction than the
+  // start, producing a negative width and silently dropping the bar. Detect
+  // the wrap and clip the bar to the visible right edge of the chart instead
+  // of hiding it entirely.
+  const overnight = endFrac <= startFrac;
+  const right = overnight ? 100 : Math.min(100, endFrac * 100);
   const width = right - left;
   if (width <= 0) return null;
   return (
