@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLang } from '../i18n.jsx';
-import { SkillBadgeRow, SkillToggleGrid } from '../components/Skills.jsx';
+import { SkillBadgeRow, SkillToggleGrid, SkillsLegend } from '../components/Skills.jsx';
 
 // ─── Inline edit row ──────────────────────────────────────────────────────────
 
@@ -430,7 +430,7 @@ export default function Employees() {
                   <th>{t('colHours')}</th>
                   <th>{t('empWorkDays')}</th>
                   <th>{t('empNotes')}</th>
-                  <th>Skills</th>
+                  <th>Skills <SkillsLegend /></th>
                   <th style={{ width: 130 }}>{t('colActions')}</th>
                 </tr>
               </thead>

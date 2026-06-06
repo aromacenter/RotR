@@ -101,6 +101,41 @@ export function SkillIcon({ skill, size = 26 }) {
   );
 }
 
+export function SkillsLegend() {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <span style={{ position: 'relative', display: 'inline-block', marginLeft: 6 }}>
+      <span
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 16, height: 16, borderRadius: '50%', background: 'var(--gray-200)',
+          color: 'var(--gray-600)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          textTransform: 'none', letterSpacing: 0,
+        }}
+        title="Skill legend"
+      >?</span>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '120%', right: 0, zIndex: 50,
+          background: 'white', border: '1px solid var(--gray-200)', borderRadius: 8,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 10, minWidth: 200,
+          textTransform: 'none', letterSpacing: 0, fontWeight: 400,
+        }}>
+          {SKILLS.map((s) => (
+            <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+              <SkillIcon skill={s.key} size={22} />
+              <span style={{ fontSize: 12, color: 'var(--gray-700)' }}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function SkillBadgeRow({ skills = [] }) {
   const active = SKILLS.filter((s) => skills.includes(s.key));
   if (active.length === 0) return <span style={{ color: 'var(--gray-300)' }}>—</span>;
