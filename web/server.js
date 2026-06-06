@@ -100,13 +100,28 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
     currentLines = [];
   };
 
-  for (const line of lines) {
-    if (!line) continue;
-    const lower = line.toLowerCase();
-    if (SECTION_HEADERS.has(lower) || /^workcloud/i.test(line) || /^printed on/i.test(line)) {
+  // Some PDF text extractions glue a department-summary row directly onto the
+  // end of an employee's row (e.g. "Evans, Lynne 11:00 - 15:00...12:00Floor23:3006:00...").
+  // Strip everything from the glued department name onward so it doesn't pollute
+  // the employee's shift/total parsing.
+  const DEPT_GLUE_RE = /(Management|Customer Service|Floor|Replenishment|Pricing|Cleaning)\d/i;
+  const stripDeptGlue = (line) => {
+    const m = line.match(DEPT_GLUE_RE);
+    return m ? line.slice(0, m.index).trim() : line;
+  };
+
+  for (const rawLine of lines) {
+    if (!rawLine) continue;
+    const lower = rawLine.toLowerCase();
+    if (SECTION_HEADERS.has(lower) || /^workcloud/i.test(rawLine) || /^printed on/i.test(rawLine)) {
       flush();
       continue;
     }
+    // Pure glued department-summary line (no employee name) - skip entirely
+    if (DEPT_GLUE_RE.test(rawLine) && !empNameRe.test(rawLine)) continue;
+
+    const line = stripDeptGlue(rawLine);
+    if (!line) continue;
 
     const empMatch = line.match(empNameRe);
     if (empMatch) {
