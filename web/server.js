@@ -341,24 +341,42 @@ function parseWorkcloudSchedule(positionedLines, dbEmployees) {
   const parsedPartsByKey = {};
   for (const k of parsedKeys) parsedPartsByKey[k] = nameParts(k);
 
+  // Pre-compute which surnames appear MORE THAN ONCE in the DB - these must
+  // NEVER be matched on surname alone; the full first name is required to
+  // distinguish e.g. "Palvolgyi, Gabor" from "Palvolgyi, Erika".
+  const surnameCountInDb = {};
+  for (const emp of dbEmployees) {
+    const s = nameParts(emp.name).surname;
+    surnameCountInDb[s] = (surnameCountInDb[s] || 0) + 1;
+  }
+
   const result = [];
   for (const dbEmp of dbEmployees) {
     const dbParts = nameParts(dbEmp.name);
     let match = null;
-    // 1) exact normalized match
+    // 1) exact normalized match (accents stripped, punctuation normalised)
     let key = parsedKeys.find((k) => norm(k) === norm(dbEmp.name));
-    // 2) same surname AND matching first-name prefix (handles abbreviations)
+    // 2) same surname AND first-name prefix matches (handles "Gabor" vs "G.")
+    //    ALWAYS required when there are multiple people with the same surname.
     if (!key) {
       key = parsedKeys.find((k) => {
         const p = parsedPartsByKey[k];
         if (!p.surname || p.surname !== dbParts.surname) return false;
-        if (!p.first || !dbParts.first) return true;
-        return p.first === dbParts.first || p.first.startsWith(dbParts.first) || dbParts.first.startsWith(p.first);
+        // Both sides must have a first name to compare when the surname is
+        // shared - never allow a blank first name to match ambiguously.
+        if (!p.first || !dbParts.first) {
+          // Only safe when this surname belongs to exactly one DB record
+          return surnameCountInDb[dbParts.surname] === 1;
+        }
+        return p.first === dbParts.first
+          || p.first.startsWith(dbParts.first)
+          || dbParts.first.startsWith(p.first);
       });
     }
-    // 3) last resort: surname match alone
-    if (!key) {
-      key = parsedKeys.find((k) => parsedPartsByKey[k].surname && parsedPartsByKey[k].surname === dbParts.surname);
+    // 3) surname-only fallback — ONLY when the surname is unique in the DB
+    //    (i.e. no risk of confusing two employees with the same family name)
+    if (!key && surnameCountInDb[dbParts.surname] === 1) {
+      key = parsedKeys.find((k) => parsedPartsByKey[k].surname === dbParts.surname);
     }
     if (key) match = parsed[key];
 
@@ -482,6 +500,13 @@ function parseDailyStoreSchedule(positionedLines, dbEmployees) {
   const partsByKey = {};
   for (const k of parsedKeys) partsByKey[k] = nameParts(k);
 
+  // Surnames shared by multiple DB employees must never match on surname alone
+  const surnameCountInDb2 = {};
+  for (const emp of dbEmployees) {
+    const s = nameParts(emp.name).surname;
+    surnameCountInDb2[s] = (surnameCountInDb2[s] || 0) + 1;
+  }
+
   const result = [];
   for (const dbEmp of dbEmployees) {
     const dbParts = nameParts(dbEmp.name);
@@ -490,12 +515,12 @@ function parseDailyStoreSchedule(positionedLines, dbEmployees) {
       key = parsedKeys.find((k) => {
         const p = partsByKey[k];
         if (!p.surname || p.surname !== dbParts.surname) return false;
-        if (!p.first || !dbParts.first) return true;
+        if (!p.first || !dbParts.first) return surnameCountInDb2[dbParts.surname] === 1;
         return p.first === dbParts.first || p.first.startsWith(dbParts.first) || dbParts.first.startsWith(p.first);
       });
     }
-    if (!key) {
-      key = parsedKeys.find((k) => partsByKey[k].surname && partsByKey[k].surname === dbParts.surname);
+    if (!key && surnameCountInDb2[dbParts.surname] === 1) {
+      key = parsedKeys.find((k) => partsByKey[k].surname === dbParts.surname);
     }
     const match = key ? parsed[key] : null;
 
