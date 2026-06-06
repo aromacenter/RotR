@@ -148,7 +148,7 @@ export default function Analyze() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
-  const [empListOpen, setEmpListOpen] = useState(true);
+  const [empListOpen, setEmpListOpen] = useState(false);
   const [progressStep, setProgressStep] = useState('');
   const fileRef = useRef();
 
