@@ -2,6 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLang } from '../i18n.jsx';
 import { SkillBadgeRow, SkillToggleGrid, SkillsLegend } from '../components/Skills.jsx';
 
+// Fixed group/department options used for grouping the printed rota
+export const DEPT_GROUPS = ['Management', 'Floor', 'Tills', 'Replenishment', 'Pricing', 'Cleaning'];
+
+function GroupSelect({ value, onChange, style }) {
+  return (
+    <select className="form-select" value={value || ''} onChange={(e) => onChange(e.target.value)} style={{ padding: '4px 6px', minWidth: 110, ...style }}>
+      <option value="">—</option>
+      {DEPT_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+    </select>
+  );
+}
+
 // ─── Inline edit row ──────────────────────────────────────────────────────────
 
 function EditRow({ emp, onSave, onCancel, t }) {
@@ -12,6 +24,7 @@ function EditRow({ emp, onSave, onCancel, t }) {
     role: emp.role || '',
     notes: emp.notes || '',
     work_days: String(emp.work_days ?? 0),
+    dept_group: emp.dept_group || '',
     skills: (() => { try { return JSON.parse(emp.skills || '[]'); } catch { return []; } })(),
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -35,18 +48,21 @@ function EditRow({ emp, onSave, onCancel, t }) {
           <input className="form-input" type="number" value={form.work_days} onChange={(e) => set('work_days', e.target.value)} min="0" max="7" step="1" style={{ padding: '5px 8px', width: 60 }} />
         </td>
         <td>
+          <GroupSelect value={form.dept_group} onChange={(v) => set('dept_group', v)} />
+        </td>
+        <td>
           <input className="form-input" value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder={t('empNotesPlaceholder')} style={{ padding: '5px 8px', minWidth: 100 }} />
         </td>
         <td>—</td>
         <td>
           <div style={{ display: 'flex', gap: 4 }}>
-            <button className="btn btn-success btn-sm" onClick={() => onSave({ ...form, contractedHours: parseFloat(form.contracted_hours) || 0, workDays: parseFloat(form.work_days) || 0 })}>{t('empSave')}</button>
+            <button className="btn btn-success btn-sm" onClick={() => onSave({ ...form, contractedHours: parseFloat(form.contracted_hours) || 0, workDays: parseFloat(form.work_days) || 0, deptGroup: form.dept_group })}>{t('empSave')}</button>
             <button className="btn btn-secondary btn-sm" onClick={onCancel}>{t('empCancel')}</button>
           </div>
         </td>
       </tr>
       <tr style={{ background: '#eff6ff' }}>
-        <td colSpan={8} style={{ padding: '8px 12px 14px', borderTop: '1px dashed #bfdbfe' }}>
+        <td colSpan={9} style={{ padding: '8px 12px 14px', borderTop: '1px dashed #bfdbfe' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 8 }}>SKILLS</div>
           <SkillToggleGrid value={form.skills} onChange={(v) => set('skills', v)} />
         </td>
@@ -68,6 +84,7 @@ function ImportPreview({ rows, onChange, onRemove, t }) {
             <th>{t('importEditRole')}</th>
             <th style={{ width: 70 }}>{t('importEditHours')}</th>
             <th style={{ width: 60 }}>{t('empWorkDays')}</th>
+            <th style={{ width: 110 }}>{t('empGroup')}</th>
             <th>{t('importEditNotes')}</th>
             <th style={{ width: 36 }}></th>
           </tr>
@@ -89,6 +106,9 @@ function ImportPreview({ rows, onChange, onRemove, t }) {
               </td>
               <td>
                 <input className="form-input" type="number" value={row.workDays ?? 0} onChange={(e) => onChange(i, 'workDays', parseFloat(e.target.value) || 0)} min="0" max="7" step="1" style={{ padding: '4px 7px', width: 55 }} />
+              </td>
+              <td>
+                <GroupSelect value={row.deptGroup} onChange={(v) => onChange(i, 'deptGroup', v)} style={{ width: 100, minWidth: 100 }} />
               </td>
               <td>
                 <input className="form-input" value={row.notes || ''} onChange={(e) => onChange(i, 'notes', e.target.value)} style={{ padding: '4px 7px', minWidth: 90 }} />
@@ -114,7 +134,7 @@ export default function Employees() {
   const [success, setSuccess] = useState('');
 
   // Add form
-  const [newForm, setNewForm] = useState({ name: '', contracted_hours: '', area: '', role: '', notes: '', work_days: '' });
+  const [newForm, setNewForm] = useState({ name: '', contracted_hours: '', area: '', role: '', notes: '', work_days: '', dept_group: '' });
 
   // Inline edit
   const [editId, setEditId] = useState(null);
@@ -163,11 +183,12 @@ export default function Employees() {
           role: newForm.role,
           notes: newForm.notes,
           workDays: parseFloat(newForm.work_days) || 0,
+          deptGroup: newForm.dept_group,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setNewForm({ name: '', contracted_hours: '', area: '', role: '', notes: '', work_days: '' });
+      setNewForm({ name: '', contracted_hours: '', area: '', role: '', notes: '', work_days: '', dept_group: '' });
       flash(t('empAdded'));
       load();
     } catch (err) {
@@ -385,6 +406,13 @@ export default function Employees() {
                 <input className="form-input" type="number" placeholder="5" min="0" max="7" step="1" value={newForm.work_days} onChange={(e) => setNewForm((f) => ({ ...f, work_days: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">{t('empGroup')}</label>
+                <select className="form-select" value={newForm.dept_group} onChange={(e) => setNewForm((f) => ({ ...f, dept_group: e.target.value }))}>
+                  <option value="">—</option>
+                  {DEPT_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">{t('empNotes')}</label>
                 <input className="form-input" type="text" placeholder={t('empNotesPlaceholder')} value={newForm.notes} onChange={(e) => setNewForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
@@ -429,6 +457,7 @@ export default function Employees() {
                   <th>{t('colRole')}</th>
                   <th>{t('colHours')}</th>
                   <th>{t('empWorkDays')}</th>
+                  <th>{t('empGroup')}</th>
                   <th>{t('empNotes')}</th>
                   <th>Skills <SkillsLegend /></th>
                   <th style={{ width: 130 }}>{t('colActions')}</th>
@@ -451,6 +480,7 @@ export default function Employees() {
                       <td>{emp.role ? <span style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{emp.role}</span> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td><strong>{emp.contracted_hours}</strong> h</td>
                       <td>{emp.work_days ? <strong>{emp.work_days}</strong> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                      <td>{emp.dept_group ? <span style={{ background: 'var(--gray-100)', padding: '2px 8px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{emp.dept_group}</span> : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td style={{ color: 'var(--gray-500)', fontSize: 13 }}>{emp.notes || <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                       <td>
                         <SkillBadgeRow skills={(() => { try { return JSON.parse(emp.skills || '[]'); } catch { return []; } })()} />

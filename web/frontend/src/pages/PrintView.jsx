@@ -11,6 +11,7 @@ const DEPT_COLORS = {
   'management':         { bg: '#1e3a8a', bar: '#1e3a8a', text: '#ffffff' }, // dark blue
   'customer service':   { bg: '#2563eb', bar: '#2563eb', text: '#ffffff' }, // blue
   'till':               { bg: '#2563eb', bar: '#2563eb', text: '#ffffff' }, // blue
+  'tills':              { bg: '#2563eb', bar: '#2563eb', text: '#ffffff' }, // blue (Group dropdown value)
   'floor':              { bg: '#7c3aed', bar: '#7c3aed', text: '#ffffff' }, // purple
   'replenishment':      { bg: '#16a34a', bar: '#16a34a', text: '#ffffff' }, // green
   'replen':             { bg: '#16a34a', bar: '#16a34a', text: '#ffffff' },
@@ -128,7 +129,7 @@ function dayDisplayName(dayLabel) {
 }
 
 // Fixed department print order. Areas not listed here are appended at the end.
-const DEPT_ORDER = ['management', 'floor', 'customer service', 'till', 'replenishment', 'replen', 'pricing', 'cleaning'];
+const DEPT_ORDER = ['management', 'floor', 'tills', 'customer service', 'till', 'replenishment', 'replen', 'pricing', 'cleaning'];
 function deptOrderIndex(area) {
   const key = (area || 'other').toLowerCase();
   const idx = DEPT_ORDER.indexOf(key);
@@ -263,7 +264,7 @@ export default function PrintView({ analysis, employees, onClose }) {
       e.name.toLowerCase() === ae.name.toLowerCase() ||
       e.name.toLowerCase().includes(ae.name.split(',')[0].toLowerCase())
     );
-    return { ...ae, area: dbEmp?.area || ae.area || 'Other' };
+    return { ...ae, area: dbEmp?.dept_group || dbEmp?.area || ae.area || 'Other' };
   });
 
   const deptMap = buildDeptMap(enriched);
