@@ -174,10 +174,20 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
   return (
     <div style={{
       pageBreakAfter: printMode === 'daily' ? 'always' : 'avoid',
-      padding: '12mm 10mm',
+      pageBreakInside: 'avoid',
+      breakInside: 'avoid',
+      // Pin each day to exactly one A4-landscape page (297 x 210mm) so a
+      // busy day never spills its last rows onto a blank second sheet -
+      // overflow is clipped rather than pushed to a new page.
+      width: '297mm',
+      height: '210mm',
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+      padding: '10mm 10mm 6mm',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     }}>
-      {/* Header */}
+      {/* Header - dept legend sits inline with the date heading (replacing
+          the empty space to its right), instead of at the bottom of the page */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8, borderBottom: '2px solid #1e293b', paddingBottom: 6 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
@@ -185,7 +195,15 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
           </div>
           {weekLabel && <div style={{ fontSize: 10, color: '#64748b' }}>{weekLabel}</div>}
         </div>
-        <div style={{ fontSize: 11, color: '#64748b' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {Object.entries(deptMap).map(([dept, color]) => (
+            <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: color.bar }} />
+              <span style={{ color: '#475569', textTransform: 'capitalize' }}>{dept}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
           {working.length} staff scheduled
         </div>
       </div>
@@ -252,16 +270,6 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
             </div>
           );
         })}
-      </div>
-
-      {/* Dept legend */}
-      <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {Object.entries(deptMap).map(([dept, color]) => (
-          <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: color.bar }} />
-            <span style={{ color: '#475569', textTransform: 'capitalize' }}>{dept}</span>
-          </div>
-        ))}
       </div>
     </div>
   );
