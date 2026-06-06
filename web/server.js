@@ -398,6 +398,131 @@ function parseWorkcloudSchedule(positionedLines, dbEmployees) {
   return result;
 }
 
+// ─── "Daily Store Schedule - Summary" parser ──────────────────────────────────
+// A different Workcloud export: ONE day per report (header like "06 Jun (Sat)"),
+// employees grouped under department headings ("Management 17:00"), each with
+// a single shift on that date plus an optional meal-break range, e.g.:
+//   "Palmer, Fred    12:00 - 21:00    17:15 - 17:45"
+// No weekly day-column grid exists here, so day resolution is trivial - every
+// shift found belongs to the single date in the report header.
+function looksLikeDailySummary(positionedLines) {
+  const text = positionedLines.map(l => l.text).join('\n');
+  return /Daily Store Schedule/i.test(text) && /^\s*\d{2}\s+\w{3}\s+\(\w{3}\)/m.test(text);
+}
+
+function parseDailyStoreSchedule(positionedLines, dbEmployees) {
+  const lines = positionedLines;
+
+  // Report date, e.g. "06 Jun (Sat)" -> dayLabel "Sat 06 Jun"
+  let dayLabel = null;
+  let dateLine = null;
+  for (const l of lines) {
+    const m = l.text.trim().match(/^(\d{2}\s+\w{3})\s+\((\w{3})\)/);
+    if (m) { dateLine = l; dayLabel = `${m[2]} ${m[1]}`; break; }
+  }
+
+  const empNameRe = /^([A-Z][a-zA-ZÀ-ÖØ-öø-ÿ\-]+(?:\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+)?,\s*[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+(?:\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ]+)?)\s+(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})\b(.*)$/;
+  const timeRangeRe = /(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})/g;
+
+  const parsed = {};
+  const parseLog = [];
+
+  for (const rawLine of lines) {
+    const text = rawLine.text.trim();
+    if (!text || text === dateLine?.text.trim()) continue;
+    const m = text.match(empNameRe);
+    if (!m) continue;
+    const name = m[1].trim();
+    const start = m[2], end = m[3];
+    const rest = m[4] || '';
+    const shiftHours = timeToHours(start, end);
+    if (shiftHours <= 0) continue;
+
+    // Anything after the shift range that ALSO looks like a time range is a
+    // meal break (the report has a dedicated "Meal Break" column) - subtract
+    // its duration from the shift's gross hours to get net worked hours.
+    let breakHours = 0;
+    const breaks = [];
+    let bm;
+    timeRangeRe.lastIndex = 0;
+    while ((bm = timeRangeRe.exec(rest))) {
+      const bh = timeToHours(bm[1], bm[2]);
+      if (bh > 0 && bh < shiftHours) { breakHours += bh; breaks.push({ start: bm[1], end: bm[2] }); }
+    }
+    const netHours = Math.round(Math.max(0, shiftHours - breakHours) * 100) / 100;
+
+    const shift = { day: dayLabel, start, end, hours: netHours, code: null, mealBreaks: breaks };
+    parsed[name] = { totalHours: netHours, shifts: [shift], dayOffDays: [] };
+    parseLog.push({
+      name,
+      rawLines: [rawLine.text],
+      detectedTotalHours: netHours,
+      shifts: [{ day: dayLabel, start, end, hours: netHours, code: null }],
+      dayOff: [],
+    });
+  }
+
+  // Same normalized fuzzy name matching as the weekly parser (accents,
+  // hyphenation, abbreviated first names all vary between PDF and DB record).
+  const norm = (s) => (s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z,\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const nameParts = (s) => {
+    const n = norm(s);
+    const [surnameRaw, firstRaw] = n.split(',').map((p) => (p || '').trim());
+    return {
+      surname: (surnameRaw || '').replace(/\s+/g, ''),
+      first: (firstRaw || '').split(' ')[0] || '',
+    };
+  };
+  const parsedKeys = Object.keys(parsed);
+  const partsByKey = {};
+  for (const k of parsedKeys) partsByKey[k] = nameParts(k);
+
+  const result = [];
+  for (const dbEmp of dbEmployees) {
+    const dbParts = nameParts(dbEmp.name);
+    let key = parsedKeys.find((k) => norm(k) === norm(dbEmp.name));
+    if (!key) {
+      key = parsedKeys.find((k) => {
+        const p = partsByKey[k];
+        if (!p.surname || p.surname !== dbParts.surname) return false;
+        if (!p.first || !dbParts.first) return true;
+        return p.first === dbParts.first || p.first.startsWith(dbParts.first) || dbParts.first.startsWith(p.first);
+      });
+    }
+    if (!key) {
+      key = parsedKeys.find((k) => partsByKey[k].surname && partsByKey[k].surname === dbParts.surname);
+    }
+    const match = key ? parsed[key] : null;
+
+    // This is a SINGLE-DAY report - "scheduled" here means hours worked on
+    // this one date, not a weekly total, so there's nothing meaningful to
+    // diff against weekly contracted hours. Status simply reflects whether
+    // the employee appears on this day's schedule at all.
+    const scheduled = Math.round((match?.totalHours ?? 0) * 100) / 100;
+    result.push({
+      name: dbEmp.name,
+      scheduledHours: scheduled,
+      contractedHours: dbEmp.contracted_hours,
+      difference: Math.round((scheduled - dbEmp.contracted_hours) * 100) / 100,
+      status: match ? 'ok' : 'not_found',
+      shifts: match?.shifts || [],
+    });
+  }
+
+  result.parseLog = parseLog;
+  result.detectedDayLabels = dayLabel ? [dayLabel] : [];
+  result.headerLineFound = dateLine ? dateLine.text : null;
+  result.isDailyFormat = true;
+  result.dayLabel = dayLabel;
+
+  return result;
+}
+
 const app = express();
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -729,7 +854,9 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
     const customInstructions = promptRow ? promptRow.value : DEFAULT_ANALYSIS_PROMPT;
 
     // ── Step 1: Parse schedule with built-in Workcloud parser (no AI needed) ──
-    const parsedEmployees = parseWorkcloudSchedule(positionedLines, employees);
+    const parsedEmployees = looksLikeDailySummary(positionedLines)
+      ? parseDailyStoreSchedule(positionedLines, employees)
+      : parseWorkcloudSchedule(positionedLines, employees);
     const totalScheduled = Math.round(parsedEmployees.reduce((s, e) => s + e.scheduledHours, 0) * 100) / 100;
     const budgetDiff = Math.round((totalScheduled - weeklyBudget) * 100) / 100;
     const budgetStatus = budgetDiff > 0.5 ? 'over' : budgetDiff < -0.5 ? 'under' : 'ok';
@@ -761,6 +888,8 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
       parseLog: parsedEmployees.parseLog || [],
       detectedDayLabels: parsedEmployees.detectedDayLabels || [],
       headerLineFound: parsedEmployees.headerLineFound || null,
+      isDailyFormat: !!parsedEmployees.isDailyFormat,
+      dayLabel: parsedEmployees.dayLabel || null,
     };
 
     // ── Step 2: AI writes narrative analysis ──────────────────────────────────
