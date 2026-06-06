@@ -80,19 +80,31 @@ async function extractPositionedLines(buffer) {
 //
 // IMPORTANT: a whole table ROW is sometimes emitted as a SINGLE text item
 // spanning all 7 day columns (e.g. "09:00-14:00 (TL) 09:00-14:00 (TL) ...").
-// Returning that item's start-x for every match would collapse every shift
-// in the row onto the same (leftmost/Sunday) column. So when the matched
-// character isn't near the item's start, interpolate its x position
-// proportionally across the item's width by character offset - this assumes
-// roughly even character spacing, which holds for these monospaced/tabular
-// PDF exports and is far more accurate than a single fixed x per item.
-function xAtIndex(line, idx) {
+// Returning that one item's start-x for every match collapses every shift in
+// the row onto the same (leftmost/Sunday) column - which is exactly the bug
+// observed. So we ALWAYS interpolate the x position proportionally by
+// character offset within the containing item, using `charWidth` (points per
+// character) - a single value derived ONCE from the header row's own item
+// spacing (see `estimateCharWidth`), not the possibly-missing/zero
+// `it.width` field some PDF exports omit. This assumes roughly even glyph
+// spacing, true for these monospaced/tabular exports, and is the only way to
+// resolve a position inside a merged multi-cell text run.
+function xAtIndex(line, idx, charWidth) {
   for (const it of line.items) {
     if (idx >= it.start && idx <= it.end) {
       const len = it.end - it.start;
-      if (len <= 0 || !it.width) return it.x;
-      const frac = (idx - it.start) / len;
-      return it.x + frac * it.width;
+      // Most table extractions place each cell's content as its OWN item -
+      // a "short" item (one shift's text, e.g. "09:00 - 14:00 (TL)" ≈ 18-20
+      // chars) is reliably ONE cell, so its real x is exact - trust it
+      // directly. Interpolating here would only inject drift from a
+      // globally-estimated per-character width that doesn't match this
+      // specific run's actual glyph spacing.
+      if (len <= 26) return it.x;
+      // Long items span MULTIPLE cells (a merged row). Interpolate using
+      // the item's own measured width when available (most accurate - it's
+      // this exact run's real pixel span), else the page-wide estimate.
+      const localCharWidth = it.width > 0 ? it.width / len : charWidth;
+      return it.x + (idx - it.start) * localCharWidth;
     }
   }
   let best = null, bestDist = Infinity;
@@ -100,7 +112,34 @@ function xAtIndex(line, idx) {
     const d = Math.min(Math.abs(it.start - idx), Math.abs(it.end - idx));
     if (d < bestDist) { bestDist = d; best = it; }
   }
-  return best ? best.x : 0;
+  if (!best) return 0;
+  // idx falls outside any item (e.g. trailing trimmed whitespace) - extrapolate
+  const refStart = idx < best.start ? best.start : best.end;
+  return best.x + (refStart === best.start ? 0 : (best.end - best.start) * charWidth) + (idx - refStart) * charWidth;
+}
+
+// Derives "points per character" from the spacing between distinct text items
+// on the header row - e.g. the x-distance between the "07 Jun (Sun)" item and
+// the "08 Jun (Mon)" item, divided by the character offset between them. This
+// works whether each header cell is its own item (common case: average over
+// consecutive pairs) or the header is itself one merged string (falls back to
+// spanning first..last item). Independent of the `width` field some PDF
+// exports leave at 0.
+function estimateCharWidth(line) {
+  const items = line.items.filter(it => it.str && it.str.trim());
+  // Span first..last item: averages out per-pair gap noise (inter-cell
+  // padding isn't proportional to character count) far better than
+  // averaging consecutive-pair ratios, which systematically over-estimates.
+  if (items.length >= 2) {
+    const first = items[0], last = items[items.length - 1];
+    const dx = last.x - first.x;
+    const dChars = last.start - first.start;
+    if (dChars > 0 && dx > 0) return dx / dChars;
+  }
+  if (items.length === 1 && items[0].width > 0 && items[0].str.length > 1) {
+    return items[0].width / items[0].str.length;
+  }
+  return 5; // sane fallback for ~9-10pt monospace text
 }
 
 function parseWorkcloudSchedule(positionedLines, dbEmployees) {
@@ -114,12 +153,17 @@ function parseWorkcloudSchedule(positionedLines, dbEmployees) {
     /\d{2}\s+\w+\s+\(Sun\)/.test(l.text) || /\d{2}\s+\w+\s+\(Mon\)/.test(l.text)
   );
 
+  // "Points per character" - derived once from the header row's own item
+  // spacing, used to interpolate x-positions inside merged multi-cell text
+  // runs everywhere below (header columns AND every employee shift).
+  let charWidth = 5;
   let dayColumns = []; // [{ date, short, x }] sorted left-to-right (Sun..Sat)
   if (headerLineIdx >= 0) {
     const headerLine = lines[headerLineIdx];
+    charWidth = estimateCharWidth(headerLine);
     const dayMatches = [...headerLine.text.matchAll(/(\d{2}\s+\w{3})\s+\((\w{3})\)/g)];
     dayColumns = dayMatches.map(m => ({
-      date: m[1], short: m[2], x: xAtIndex(headerLine, m.index),
+      date: m[1], short: m[2], x: xAtIndex(headerLine, m.index, charWidth),
     }));
     dayColumns.sort((a, b) => a.x - b.x);
   }
@@ -203,7 +247,7 @@ function parseWorkcloudSchedule(positionedLines, dbEmployees) {
       const dayOffRe = /Day Off/ig;
       let m;
       while ((m = dayOffRe.exec(text))) {
-        const day = fallbackDay(xAtIndex(lineObj, m.index));
+        const day = fallbackDay(xAtIndex(lineObj, m.index, charWidth));
         if (day) dayOffDays.push(day);
       }
 
@@ -218,7 +262,7 @@ function parseWorkcloudSchedule(positionedLines, dbEmployees) {
         if (code === 'm') continue; // skip meal breaks entirely
         const h = timeToHours(sm[1], sm[2]);
         if (h <= 0) continue;
-        const day = fallbackDay(xAtIndex(lineObj, sm.index));
+        const day = fallbackDay(xAtIndex(lineObj, sm.index, charWidth));
         if (day) shifts.push({ day, start: sm[1], end: sm[2], hours: h, code });
       }
     });
