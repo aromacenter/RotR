@@ -755,24 +755,44 @@ app.post('/api/employees/import-confirm', requireAuth, (req, res) => {
 
 const DEFAULT_ANALYSIS_PROMPT = `You are a rota scheduling analyst reviewing a Zebra Workcloud weekly schedule export.
 
-SCHEDULE FORMAT (Workcloud):
-- Each row = one employee, columns = days of the week (Sun–Sat), last column = Total Hours for the week
-- Shift format: "HH:MM - HH:MM (CODE)" e.g. "09:00 - 17:00 (TL)"
-- Area codes: MA=Management, TL=Till/Customer Service, FL=Floor, R=Replenishment, P=Pricing, C=Cleaning, DR=Driver
-- "(m)" entries are 30-min paid meal breaks WITHIN the shift — do NOT count these as separate hours
-- Night shifts cross midnight: "20:00 - 07:00" = 11 hours (next day)
-- "Day Off" means the employee is not scheduled
-- The TOTAL HOURS column at the end of each row is the authoritative weekly hour count — use this directly instead of recalculating
+MANDATORY COVERAGE RULES (flag as a violation if not met):
+1. EVERY shift (day or night) must have at least: 1 Keyholder, 2 Till staff, 1 Floor member.
+2. NIGHT shifts must have: 1 Keyholder AND at least 4 Replenishment staff.
+3. A "Keyholder" is any Management-area employee or an employee whose name/code indicates keyholder responsibility.
+4. If no Keyholder is on shift — flag it explicitly as a CRITICAL issue.
 
-ANALYSIS FOCUS:
-- Compare each employee's Total Hours against their contracted hours
-- Flag anyone over contracted hours (overtime risk)
-- Flag anyone under contracted hours (lost hours / undertime)
-- Check if total scheduled hours across all staff exceed the weekly approved budget
-- Flag coverage gaps: times when departments have insufficient cover
-- Note any compliance concerns (e.g. long shifts without breaks, back-to-back night shifts)
+OUTPUT FORMAT — write two clearly separated sections, ENGLISH first then HUNGARIAN:
 
-Write your analysis in clear English. Name specific employees, state exact hour differences, and give concrete shift adjustment recommendations.`;
+=== ENGLISH ANALYSIS ===
+
+BUDGET SUMMARY
+• This week X hours are available (approved budget). Y hours have been used. [Over/Under/On budget] by Z hours.
+[If over budget: call this out prominently and list ONLY the over-contracted employees with their excess hours.]
+
+OVERTIME — EMPLOYEES TO CUT BACK
+[For each employee scheduled over their contracted hours: name, contracted hours, scheduled hours, excess. Suggest which shift(s) to shorten or remove, always keeping mandatory coverage rules in place.]
+
+COVERAGE WARNINGS
+[List every day/shift where keyholder, till count, floor count, or night replen count falls below the mandatory minimum. Be specific: day, time window, what is missing, who is on shift.]
+
+=== MAGYAR ELEMZÉS ===
+
+BÜDZSÉ ÖSSZEFOGLALÓ
+• Erre a hétre X óra áll rendelkezésre (jóváhagyott keret). Ebből Y órát használtál el. [Túllépés/Hiány/Egyensúly]: Z óra.
+[Ha túllépés van: emeld ki és listázd CSAK azokat a dolgozókat, akik a szerződéses óráikon felül vannak, a felesleges óraszámmal.]
+
+TÚLÓRA — VISSZAVÁGANDÓ DOLGOZÓK
+[Minden szerződéses óráját meghaladó dolgozónál: név, szerződéses órák, beosztott órák, különbség. Konkrét javaslat melyik műszakot kell rövidíteni vagy törölni, mindig betartva a kötelező lefedettségi szabályokat.]
+
+FEDEZETI FIGYELMEZTETÉSEK
+[Listázd azokat a napokat/műszakokat, ahol a keyholder, tills létszám, floor vagy éjszakai replen létszám a kötelező minimum alá esik. Konkrétan: nap, időablak, mi hiányzik, kik vannak beosztva.]
+
+RULES FOR WRITING:
+- Start EVERY section with its heading exactly as shown above (use the === and bold headings).
+- Use bullet points (•) within sections — no plain paragraphs.
+- Do NOT repeat the same information in English and Hungarian — the content must match but the language changes.
+- Be concise and specific: always name employees, state exact hours, give concrete actionable recommendations.
+- Never use vague language like "consider adjusting" — say exactly what to change.`;
 
 app.get('/api/settings/public', requireAuth, (req, res) => {
   const budget = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');
@@ -952,12 +972,24 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
       .map(e => `  ${e.name}: ${e.scheduledHours}h scheduled / ${e.contractedHours}h contracted → ${e.status.toUpperCase()} (${e.difference > 0 ? '+' : ''}${e.difference}h)`)
       .join('\n');
 
+    // Build per-day roster summary so AI can check keyholder / till / floor / replen coverage
+    const allDays = [...new Set(parsedEmployees.flatMap(e => (e.shifts||[]).map(s=>s.day)))].sort();
+    const dayRosters = allDays.map(day => {
+      const onShift = parsedEmployees
+        .filter(e => (e.shifts||[]).some(s => s.day === day && s.start && s.end))
+        .map(e => {
+          const sh = (e.shifts||[]).filter(s => s.day === day && s.start && s.end);
+          return `    ${e.name} [${e.area||'?'}] ${sh.map(s=>`${s.start}-${s.end}`).join(', ')}`;
+        });
+      return `  ${day}:\n${onShift.join('\n') || '    (nobody scheduled)'}`;
+    }).join('\n');
+
     const narrativeMessage = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 3000,
       messages: [{
         role: 'user',
-        content: `You are a rota scheduling analyst. Write a detailed rota analysis and correction plan.
+        content: `You are a rota scheduling analyst. Follow the output format in INSTRUCTIONS exactly.
 
 INSTRUCTIONS:
 ${customInstructions}
@@ -965,15 +997,13 @@ ${customInstructions}
 WEEK: ${weekLabel || 'not specified'}
 WEEKLY BUDGET: ${weeklyBudget}h | TOTAL SCHEDULED: ${totalScheduled}h | BUDGET STATUS: ${budgetStatus.toUpperCase()} (${budgetDiff > 0 ? '+' : ''}${budgetDiff}h)
 
-EMPLOYEE HOUR COMPARISON (parsed from schedule):
+EMPLOYEE HOUR COMPARISON:
 ${empSummary}
 
-NOT FOUND IN SCHEDULE (${notFound.length}): ${notFound.map(e => e.name).join(', ') || 'none'}
+PER-DAY ROSTER (use this to check keyholder/till/floor/replen coverage for EACH day):
+${dayRosters}
 
-VIOLATIONS:
-${violations.join('\n') || 'None found.'}
-
-Write plain English paragraphs (no JSON, no markdown headers, no bullet symbols). Be specific: name employees, state exact hours, give concrete shift change or swap recommendations to fix every violation. Minimum 200 words.`,
+NOT FOUND IN SCHEDULE (${notFound.length}): ${notFound.map(e => e.name).join(', ') || 'none'}`,
       }],
     });
 

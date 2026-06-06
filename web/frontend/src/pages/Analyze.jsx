@@ -141,25 +141,79 @@ function AnalysisResult({ result, employees, onClose }) {
         </div>
       </div>
 
-      {narrative && (
-        <div className="card" style={{ marginBottom: 20, borderLeft: '4px solid var(--primary)' }}>
-          <div className="card-header"><div className="card-title">📝 Analysis & Recommendations</div></div>
-          <div className="card-body">
-            <div
-              style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--gray-700)' }}
-              dangerouslySetInnerHTML={{ __html: marked.parse(narrative) }}
-            />
-          </div>
-          {result.aiUsage && (
-            <div style={{ borderTop: '1px solid var(--gray-100)', padding: '8px 16px', fontSize: 12, color: 'var(--gray-500)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span>🤖 {result.aiUsage.model}</span>
-              <span>{result.aiUsage.inputTokens.toLocaleString()} in / {result.aiUsage.outputTokens.toLocaleString()} out tokens</span>
-              <span style={{ fontWeight: 700, color: 'var(--gray-700)' }}>≈ ${result.aiUsage.estimatedCostUSD.toFixed(4)} this call</span>
-              <span style={{ fontStyle: 'italic' }} title={result.aiUsage.note}>(estimated — ⓘ hover for details)</span>
+      {narrative && (() => {
+        // Split narrative into EN and HU sections by looking for the === dividers.
+        // Each section is then rendered as structured markdown (headers become
+        // bold banners, bullet lines get their own row with a colour indicator
+        // for CRITICAL / overtime keywords).
+        const enMatch = narrative.match(/===\s*ENGLISH ANALYSIS\s*===([\s\S]*?)(?:===\s*MAGYAR ELEMZÉS\s*===|$)/i);
+        const huMatch = narrative.match(/===\s*MAGYAR ELEMZÉS\s*===([\s\S]*?)(?:===|$)/i);
+        const enText  = enMatch ? enMatch[1].trim() : narrative;
+        const huText  = huMatch ? huMatch[1].trim() : null;
+
+        const renderSection = (text) => {
+          if (!text) return null;
+          // Parse lines into blocks: headings (ALL CAPS lines or lines ending with newline after them),
+          // bullet points (• or - prefix), and plain text.
+          return text.split('\n').map((line, i) => {
+            const trimmed = line.trim();
+            if (!trimmed) return <div key={i} style={{ height: 8 }} />;
+            // Section heading: ALL CAPS, no bullet
+            if (/^[A-ZÁÉÍÓÖŐÚÜŰ\s\-—\/]+$/.test(trimmed) && trimmed.length > 3 && !trimmed.startsWith('•')) {
+              return (
+                <div key={i} style={{ fontWeight: 800, fontSize: 13, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #e2e8f0', paddingBottom: 4, marginTop: 16, marginBottom: 6 }}>
+                  {trimmed}
+                </div>
+              );
+            }
+            // Bullet line
+            const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-');
+            const content  = isBullet ? trimmed.replace(/^[•\-]\s*/, '') : trimmed;
+            const isCritical = /keyholder|CRITICAL|KRITIKUS|hiányzik.*keyholder|no keyholder/i.test(content);
+            const isOver     = /over|túlóra|felesleg|\+\d|\bover\b/i.test(content);
+            return (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4, paddingLeft: isBullet ? 0 : 0 }}>
+                {isBullet && (
+                  <span style={{ color: isCritical ? '#dc2626' : isOver ? '#d97706' : '#64748b', fontWeight: 700, flexShrink: 0, lineHeight: '1.6' }}>
+                    {isCritical ? '⚠' : isOver ? '▲' : '•'}
+                  </span>
+                )}
+                <span style={{ fontSize: 13, lineHeight: 1.65, color: isCritical ? '#dc2626' : '#374151', fontWeight: isCritical ? 700 : 400 }}>
+                  {content}
+                </span>
+              </div>
+            );
+          });
+        };
+
+        return (
+          <div style={{ marginBottom: 20 }}>
+            {/* English section */}
+            <div className="card" style={{ marginBottom: 12, borderLeft: '4px solid #3b82f6' }}>
+              <div className="card-header" style={{ background: '#eff6ff' }}>
+                <div className="card-title" style={{ color: '#1d4ed8' }}>📋 English Analysis</div>
+              </div>
+              <div className="card-body">{renderSection(enText)}</div>
             </div>
-          )}
-        </div>
-      )}
+            {/* Hungarian section */}
+            {huText && (
+              <div className="card" style={{ marginBottom: 12, borderLeft: '4px solid #10b981' }}>
+                <div className="card-header" style={{ background: '#ecfdf5' }}>
+                  <div className="card-title" style={{ color: '#065f46' }}>📋 Magyar Elemzés</div>
+                </div>
+                <div className="card-body">{renderSection(huText)}</div>
+              </div>
+            )}
+            {result.aiUsage && (
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '4px 0' }}>
+                <span>🤖 {result.aiUsage.model}</span>
+                <span>{result.aiUsage.inputTokens.toLocaleString()} in / {result.aiUsage.outputTokens.toLocaleString()} out tokens</span>
+                <span style={{ fontWeight: 700, color: 'var(--gray-700)' }}>≈ ${result.aiUsage.estimatedCostUSD.toFixed(4)}</span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {Array.isArray(result.parseLog) && result.parseLog.length > 0 && (
         <ParseLogPanel result={result} />
       )}
