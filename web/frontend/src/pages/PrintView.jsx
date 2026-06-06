@@ -147,7 +147,9 @@ function DayPage({ day, employees, deptMap, weekLabel, printMode }) {
       return a.name.localeCompare(b.name);
     });
 
-  if (working.length === 0) return null;
+  // Always render the page even with nobody scheduled - the user wants all
+  // 7 days of the week present in the printout, showing only the people who
+  // are actually scheduled that day (which may be nobody).
 
   // Group consecutive employees by department for section headers/dividers
   const groups = [];
@@ -278,18 +280,20 @@ export default function PrintView({ analysis, employees, onClose }) {
 
   // Derive the actual day labels present in the data (e.g. "Mon 02 Jun", "Tue 03 Jun")
   // in the order they first appear, instead of assuming a fixed Mon-Sun week.
-  const dayLabels = [];
+  const seenLabels = [];
   for (const emp of enriched) {
     for (const s of (emp.shifts || [])) {
-      if (s.day && !dayLabels.includes(s.day)) dayLabels.push(s.day);
+      if (s.day && !seenLabels.includes(s.day)) seenLabels.push(s.day);
     }
   }
   // English financial-year week: Sunday is the first day, Saturday the last.
+  // Always print all 7 days, even ones with nobody scheduled - fall back to
+  // just the weekday short name when no shift data carries that day's label.
   const WEEKDAY_ORDER = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-  dayLabels.sort((a, b) => {
-    const ia = WEEKDAY_ORDER.indexOf((a || '').slice(0, 3).toLowerCase());
-    const ib = WEEKDAY_ORDER.indexOf((b || '').slice(0, 3).toLowerCase());
-    return ia - ib;
+  const WEEKDAY_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayLabels = WEEKDAY_ORDER.map((wd, i) => {
+    const found = seenLabels.find((l) => (l || '').slice(0, 3).toLowerCase() === wd);
+    return found || WEEKDAY_FULL[i];
   });
 
   const handlePrint = () => {

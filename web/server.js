@@ -98,10 +98,15 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
         dayIdx++;
         continue;
       }
-      const shiftMatches = [...line.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)m][^)]*)\))?/g)];
+      // Capture ANY parenthetical annotation after the time range (e.g. "(TL)",
+      // "(m)") - the previous "[^)m]" exclusion meant "(m)" never matched the
+      // optional group at all, so meal-break rows slipped through as real
+      // shifts (counted in totals AND consumed a day slot, misaligning every
+      // subsequent day - the root cause of bogus day labels and wrong totals).
+      const shiftMatches = [...line.matchAll(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\(([^)]+)\))?/g)];
       for (const sm of shiftMatches) {
-        const code = sm[3] || '';
-        if (code === 'm') continue; // skip meal breaks
+        const code = (sm[3] || '').trim().toLowerCase();
+        if (code === 'm') continue; // skip meal breaks - never count, never consume a day slot
         const h = timeToHours(sm[1], sm[2]);
         if (h > 0) {
           const wi = dayIdx % 7;
