@@ -141,6 +141,90 @@ function AnalysisResult({ result, employees, onClose }) {
         </div>
       </div>
 
+      {/* ── Coverage Matrix Table ─────────────────────────────────────────── */}
+      {Array.isArray(result.coverageMatrix) && result.coverageMatrix.length > 0 && (() => {
+        const matrix = result.coverageMatrix;
+        const rows = [
+          { key: 'keyholder',   label: '🔑 Keyholder',    sub: 'min. 1' },
+          { key: 'till',        label: '🛒 Till Staff',    sub: 'min. 2' },
+          { key: 'floor',       label: '🏪 Floor Staff',   sub: 'min. 1' },
+          { key: 'nightReplen', label: '🌙 Night Replen',  sub: 'min. 4' },
+        ];
+        const cellStyle = (ok, applicable) => ({
+          textAlign: 'center',
+          padding: '10px 6px',
+          background: !applicable ? '#f8fafc' : ok ? '#f0fdf4' : '#fef2f2',
+          borderBottom: '1px solid #e2e8f0',
+          borderRight: '1px solid #e2e8f0',
+          fontSize: 18,
+          minWidth: 72,
+        });
+        const allOk = matrix.every(d =>
+          rows.every(r => {
+            const cell = d[r.key];
+            return !cell.applicable || cell.ok;
+          })
+        );
+        return (
+          <div className="card" style={{ marginBottom: 20, borderLeft: `4px solid ${allOk ? '#10b981' : '#ef4444'}` }}>
+            <div className="card-header" style={{ background: allOk ? '#ecfdf5' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="card-title" style={{ color: allOk ? '#065f46' : '#991b1b' }}>
+                {allOk ? '✅' : '⚠️'} Coverage Check — Mandatory Rules
+              </div>
+              <span style={{ fontSize: 12, color: '#64748b' }}>Green = rule met · Red = violation</span>
+            </div>
+            <div className="card-body" style={{ padding: 0, overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '10px 14px', textAlign: 'left', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 700, color: '#374151', minWidth: 140 }}>
+                      Rule
+                    </th>
+                    {matrix.map(d => (
+                      <th key={d.day} style={{ padding: '10px 6px', textAlign: 'center', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap' }}>
+                        {(d.day || '').replace(/\s+\d{2}\s+\w+/, '').trim() || d.day}
+                        <div style={{ fontWeight: 400, fontSize: 11, color: '#94a3b8' }}>
+                          {(d.day || '').replace(/^\w+\s+/, '')}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.key}>
+                      <td style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 600, color: '#1e293b', background: '#fafafa' }}>
+                        {row.label}
+                        <div style={{ fontWeight: 400, fontSize: 11, color: '#94a3b8' }}>{row.sub}</div>
+                      </td>
+                      {matrix.map(d => {
+                        const cell = d[row.key] || {};
+                        const applicable = cell.applicable !== false;
+                        return (
+                          <td key={d.day} style={cellStyle(cell.ok, applicable)} title={applicable ? (cell.who||[]).join(', ') || 'Nobody' : 'No night shift'}>
+                            {!applicable
+                              ? <span style={{ fontSize: 13, color: '#cbd5e1' }}>—</span>
+                              : cell.ok
+                                ? <span title={`${cell.count} / ${cell.required} · ${(cell.who||[]).join(', ')}`}>✅</span>
+                                : <span title={`${cell.count} / ${cell.required} · ${(cell.who||[]).join(', ') || 'nobody'}`}>❌</span>
+                            }
+                            {applicable && (
+                              <div style={{ fontSize: 10, color: cell.ok ? '#16a34a' : '#dc2626', fontWeight: 600, marginTop: 2 }}>
+                                {cell.count}/{cell.required}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
+
       {narrative && (() => {
         // Split narrative into EN and HU sections by looking for the === dividers.
         // Each section is then rendered as structured markdown (headers become

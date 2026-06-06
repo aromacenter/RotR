@@ -1020,9 +1020,69 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
       .map(([name, skills]) => `  ${name}: ${skills.map(k => skillLabels[k] || k).join(', ')}`)
       .join('\n') || '  (no skill data recorded)';
 
+    // ── Coverage matrix (Sun–Sat) ─────────────────────────────────────────────
+    // For each day check the 4 mandatory coverage rules against actual skills:
+    //   Keyholder    : ≥1 employee with keyholder skill on shift
+    //   Till staff   : ≥2 employees with till_trained skill (or till area) on shift
+    //   Floor staff  : ≥1 employee with floor area or floor_supervisor skill on shift
+    //   Night staff  : ≥4 Replenishment-area employees on a night shift
+    //                  (night = shift start ≥ 18:00 OR end ≤ 08:00 next day)
+    const DAY_ORDER = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const toMinutes = (t) => { const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
+    const isNightShift = (start, end) => {
+      const s = toMinutes(start), e = toMinutes(end);
+      return s >= 18*60 || e <= 8*60 || e < s; // starts late, ends early, or crosses midnight
+    };
+
+    // Collect all unique day labels present in the schedule, sorted Sun→Sat
+    const allDays = [...new Set(parsedEmployees.flatMap(e => (e.shifts||[]).map(s=>s.day)))]
+      .sort((a, b) => {
+        const ai = DAY_ORDER.findIndex(d => (a||'').startsWith(d));
+        const bi = DAY_ORDER.findIndex(d => (b||'').startsWith(d));
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+
+    const coverageMatrix = allDays.map(day => {
+      // All employees with at least one real shift this day
+      const onShift = parsedEmployees.filter(e =>
+        (e.shifts||[]).some(s => s.day === day && s.start && s.end)
+      );
+      const skills = (emp) => skillsIndex[emp.name] || [];
+      const area = (emp) => (emp.area || '').toLowerCase();
+
+      const keyholders = onShift.filter(e => skills(e).includes('keyholder'));
+      const tillStaff  = onShift.filter(e =>
+        skills(e).includes('till_trained') || skills(e).includes('till_supervisor') ||
+        area(e).includes('till') || area(e).includes('customer')
+      );
+      const floorStaff = onShift.filter(e =>
+        area(e).includes('floor') || skills(e).includes('floor_supervisor')
+      );
+      // Night shifts: employees in Replenishment area on a night-time shift
+      const nightReplen = onShift.filter(e =>
+        (area(e).includes('replen') || area(e).includes('replenishment')) &&
+        (e.shifts||[]).some(s => s.day === day && s.start && s.end && isNightShift(s.start, s.end))
+      );
+      // Is there ANY night shift at all this day (any area)?
+      const hasNightShift = onShift.some(e =>
+        (e.shifts||[]).some(s => s.day === day && s.start && s.end && isNightShift(s.start, s.end))
+      );
+
+      return {
+        day,
+        keyholder:  { ok: keyholders.length >= 1, count: keyholders.length, required: 1, who: keyholders.map(e=>e.name) },
+        till:       { ok: tillStaff.length >= 2,  count: tillStaff.length,  required: 2, who: tillStaff.map(e=>e.name) },
+        floor:      { ok: floorStaff.length >= 1, count: floorStaff.length, required: 1, who: floorStaff.map(e=>e.name) },
+        nightReplen: hasNightShift
+          ? { ok: nightReplen.length >= 4, count: nightReplen.length, required: 4, who: nightReplen.map(e=>e.name), applicable: true }
+          : { ok: true, count: 0, required: 4, who: [], applicable: false }, // no night shift → rule doesn't apply
+      };
+    });
+    analysis.coverageMatrix = coverageMatrix;
+
     // Build per-day roster — include each employee's skills so the AI can
     // verify keyholder/till/floor/replen coverage per shift directly.
-    const allDays = [...new Set(parsedEmployees.flatMap(e => (e.shifts||[]).map(s=>s.day)))].sort();
+
     const dayRosters = allDays.map(day => {
       const onShift = parsedEmployees
         .filter(e => (e.shifts||[]).some(s => s.day === day && s.start && s.end))
