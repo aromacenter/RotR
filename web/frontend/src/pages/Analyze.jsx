@@ -49,6 +49,14 @@ function AnalysisResult({ result, employees, onClose }) {
               dangerouslySetInnerHTML={{ __html: marked.parse(narrative) }}
             />
           </div>
+          {result.aiUsage && (
+            <div style={{ borderTop: '1px solid var(--gray-100)', padding: '8px 16px', fontSize: 12, color: 'var(--gray-500)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span>🤖 {result.aiUsage.model}</span>
+              <span>{result.aiUsage.inputTokens.toLocaleString()} in / {result.aiUsage.outputTokens.toLocaleString()} out tokens</span>
+              <span style={{ fontWeight: 700, color: 'var(--gray-700)' }}>≈ ${result.aiUsage.estimatedCostUSD.toFixed(4)} this call</span>
+              <span style={{ fontStyle: 'italic' }} title={result.aiUsage.note}>(estimated — ⓘ hover for details)</span>
+            </div>
+          )}
         </div>
       )}
       {!narrative && summary && (

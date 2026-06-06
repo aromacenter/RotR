@@ -583,7 +583,25 @@ Write plain English paragraphs (no JSON, no markdown headers, no bullet symbols)
     });
 
     analysis.narrative = narrativeMessage.content[0].text.trim();
-    console.log(`Parsed ${parsedEmployees.length} employees. Total: ${totalScheduled}h. Over: ${overEmps.length}, Under: ${underEmps.length}`);
+
+    // Estimated AI cost for this call (Claude Sonnet pricing: $3 / MTok input, $15 / MTok output — approximate, check console.anthropic.com for exact current rates)
+    const usage = narrativeMessage.usage || {};
+    const inputTokens = usage.input_tokens || 0;
+    const outputTokens = usage.output_tokens || 0;
+    const PRICE_PER_MTOK_INPUT = 3;
+    const PRICE_PER_MTOK_OUTPUT = 15;
+    const estimatedCostUSD = Math.round(
+      ((inputTokens / 1_000_000) * PRICE_PER_MTOK_INPUT + (outputTokens / 1_000_000) * PRICE_PER_MTOK_OUTPUT) * 1e6
+    ) / 1e6;
+    analysis.aiUsage = {
+      model: 'claude-sonnet-4-6',
+      inputTokens,
+      outputTokens,
+      estimatedCostUSD,
+      note: 'Estimated from token usage at approximate published rates. The Anthropic API does not expose your account balance — check console.anthropic.com for exact billing.',
+    };
+
+    console.log(`Parsed ${parsedEmployees.length} employees. Total: ${totalScheduled}h. Over: ${overEmps.length}, Under: ${underEmps.length}. AI cost ≈ $${estimatedCostUSD} (${inputTokens} in / ${outputTokens} out tokens)`);
 
     db.prepare(
       `INSERT INTO analyses (week_label, filename, result_json, created_at) VALUES (?, ?, ?, datetime('now'))`
