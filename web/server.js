@@ -58,6 +58,11 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
   const SECTION_HEADERS = new Set(['management','customer service','floor','replenishment','pricing','cleaning','total scheduled','store hours']);
 
   const parsed = {}; // name -> { totalHours, shifts: [{day, start, end, hours, code}] }
+  // Full traceable log: for every employee block found in the PDF, record the
+  // raw extracted lines plus exactly what was derived from them (total hours,
+  // and each shift mapped to a day) - so parsing mistakes can be inspected
+  // and verified against the original document after the fact.
+  const parseLog = [];
 
   let currentName = null;
   let currentLines = [];
@@ -65,6 +70,7 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
   const flush = () => {
     if (!currentName) return;
     const block = currentLines.join(' ');
+    const rawLinesSnapshot = currentLines.slice();
 
     // Extract total hours (last standalone HH:MM not followed by dash)
     // Note: no \b before the digits - PDF text extraction sometimes glues the
@@ -131,6 +137,13 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
     }
 
     parsed[currentName] = { totalHours, shifts, dayOffDays };
+    parseLog.push({
+      name: currentName,
+      rawLines: rawLinesSnapshot,
+      detectedTotalHours: totalHours,
+      shifts: shifts.map(s => ({ day: s.day, start: s.start, end: s.end, hours: s.hours, code: s.code || null })),
+      dayOff: dayOffDays.slice(),
+    });
     currentName = null;
     currentLines = [];
   };
@@ -209,6 +222,13 @@ function parseWorkcloudSchedule(pdfText, dbEmployees) {
       shifts: [...(match?.shifts || []), ...dayOffShifts],
     });
   }
+
+  // Attach trace data (arrays are objects - safe to hang extra props off them)
+  // so the caller can surface a full "what did we read / what did we derive"
+  // log without changing the function's primary return shape.
+  result.parseLog = parseLog;
+  result.detectedDayLabels = dayLabels.map(d => `${d.short} ${d.date}`);
+  result.headerLineFound = headerLineIdx >= 0 ? lines[headerLineIdx] : null;
 
   return result;
 }
@@ -567,6 +587,13 @@ app.post('/api/analyze', requireAuth, upload.single('pdf'), async (req, res) => 
       violations,
       suggestions: [],
       summary: `Week ${weekLabel}: ${totalScheduled}h scheduled vs ${weeklyBudget}h budget. ${overEmps.length} over, ${underEmps.length} under contracted hours.`,
+      // Full traceable parse log: exactly what raw text was read for each
+      // employee and what data was derived from it (totals, per-day shifts,
+      // day-off entries) plus the detected day-column header - so the
+      // extraction can be checked against the original PDF after the fact.
+      parseLog: parsedEmployees.parseLog || [],
+      detectedDayLabels: parsedEmployees.detectedDayLabels || [],
+      headerLineFound: parsedEmployees.headerLineFound || null,
     };
 
     // ── Step 2: AI writes narrative analysis ──────────────────────────────────

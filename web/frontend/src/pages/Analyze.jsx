@@ -13,6 +13,107 @@ function StatusBadge({ status }) {
   return <span className="badge badge-neutral">{t('badgeNotFound')}</span>;
 }
 
+// Full traceable log of exactly what raw text was read from the uploaded PDF
+// for each employee, and what the parser derived from it (total hours, and
+// each shift mapped to a day) - lets you check the extraction against the
+// original document when something looks off.
+function ParseLogPanel({ result }) {
+  const [open, setOpen] = React.useState(false);
+  const log = result.parseLog || [];
+
+  const downloadLog = () => {
+    const lines = [];
+    lines.push(`Parse log — ${result.weekLabel || 'Rota'}`);
+    if (result.headerLineFound) lines.push(`Detected header line: ${result.headerLineFound}`);
+    if (Array.isArray(result.detectedDayLabels) && result.detectedDayLabels.length) {
+      lines.push(`Detected day columns: ${result.detectedDayLabels.join(', ')}`);
+    }
+    lines.push('');
+    for (const entry of log) {
+      lines.push(`=== ${entry.name} ===`);
+      lines.push('--- Raw text read from PDF ---');
+      (entry.rawLines || []).forEach((l) => lines.push(`  ${l}`));
+      lines.push(`--- Derived: total hours = ${entry.detectedTotalHours} ---`);
+      if (entry.shifts && entry.shifts.length) {
+        entry.shifts.forEach((s) => lines.push(`  ${s.day}: ${s.start}–${s.end} (${s.hours}h)${s.code ? ` [${s.code}]` : ''}`));
+      }
+      if (entry.dayOff && entry.dayOff.length) {
+        entry.dayOff.forEach((d) => lines.push(`  ${d}: Day Off`));
+      }
+      lines.push('');
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `parse-log-${(result.weekLabel || 'rota').replace(/[^\w-]+/g, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div
+        className="card-header"
+        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <div className="card-title">🔍 Parse log — what was read & derived from the PDF {open ? '▲' : '▼'}</div>
+        <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); downloadLog(); }}>⬇ Download log</button>
+      </div>
+      {open && (
+        <div className="card-body" style={{ maxHeight: 480, overflowY: 'auto', fontSize: 12 }}>
+          {result.headerLineFound && (
+            <div style={{ marginBottom: 8, color: 'var(--gray-600)' }}>
+              <strong>Detected header line:</strong> <code>{result.headerLineFound}</code>
+            </div>
+          )}
+          {Array.isArray(result.detectedDayLabels) && result.detectedDayLabels.length > 0 && (
+            <div style={{ marginBottom: 12, color: 'var(--gray-600)' }}>
+              <strong>Detected day columns:</strong> {result.detectedDayLabels.join(' · ')}
+            </div>
+          )}
+          {log.map((entry, i) => (
+            <details key={i} style={{ marginBottom: 8, border: '1px solid var(--gray-100)', borderRadius: 6, padding: '6px 10px' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                {entry.name} — total {entry.detectedTotalHours}h, {entry.shifts.length} shift(s){entry.dayOff.length ? `, ${entry.dayOff.length} day off` : ''}
+              </summary>
+              <div style={{ marginTop: 6, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 280px' }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--gray-500)' }}>Raw text read from PDF:</div>
+                  <pre style={{ whiteSpace: 'pre-wrap', background: 'var(--gray-50)', padding: 6, borderRadius: 4, fontSize: 11 }}>
+                    {(entry.rawLines || []).join('\n')}
+                  </pre>
+                </div>
+                <div style={{ flex: '1 1 240px' }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--gray-500)' }}>Derived per-day data:</div>
+                  <table style={{ width: '100%', fontSize: 11 }}>
+                    <tbody>
+                      {entry.shifts.map((s, j) => (
+                        <tr key={`s${j}`}>
+                          <td style={{ paddingRight: 8 }}>{s.day}</td>
+                          <td>{s.start}–{s.end}</td>
+                          <td style={{ textAlign: 'right' }}>{s.hours}h{s.code ? ` (${s.code})` : ''}</td>
+                        </tr>
+                      ))}
+                      {entry.dayOff.map((d, j) => (
+                        <tr key={`d${j}`}>
+                          <td style={{ paddingRight: 8 }}>{d}</td>
+                          <td colSpan={2} style={{ color: 'var(--gray-500)' }}>Day Off</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnalysisResult({ result, employees, onClose }) {
   const { t } = useLang();
   const [showPrint, setShowPrint] = React.useState(false);
@@ -59,6 +160,10 @@ function AnalysisResult({ result, employees, onClose }) {
           )}
         </div>
       )}
+      {Array.isArray(result.parseLog) && result.parseLog.length > 0 && (
+        <ParseLogPanel result={result} />
+      )}
+
       {!narrative && summary && (
         <div className="alert alert-info" style={{ marginBottom: 24 }}>
           <strong>{t('resultSummaryLabel')}:</strong> {summary}
