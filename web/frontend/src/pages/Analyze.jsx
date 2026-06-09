@@ -10,33 +10,39 @@ marked.setOptions({ breaks: true, gfm: true });
 // to 1 February each calendar year.  Weeks run Sunday → Saturday.
 // Week 1 = first week of the FY; week numbers restart each FY.
 
+// Use UTC day arithmetic throughout to avoid DST skew (UK clocks change on the
+// last Sunday of March — exactly when the FY boundary often falls — which
+// makes millisecond subtraction lose an hour and shift the week number by 1).
+function dateToUtcDays(d) {
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+}
+
 function fyStartForDate(date) {
-  // Find Sunday nearest to 1 Feb of the relevant calendar year.
-  // If the date falls before that Sunday use the previous year's FY start.
-  const nearestSunToFeb1 = (yr) => {
-    const feb1 = new Date(yr, 1, 1); // 1 Feb
-    const dow = feb1.getDay();       // 0=Sun
-    const offset = dow <= 3 ? -dow : 7 - dow; // nearest Sunday (ties go forward)
-    return new Date(yr, 1, 1 + offset);
+  // UK retail / tax-year: FY starts on the Sunday nearest to 1 April.
+  // Nearest Sunday to 1 Apr 2026 = 29 Mar 2026 → wk11 = 7–13 Jun 2026 ✓
+  const nearestSunToApr1 = (yr) => {
+    const apr1 = new Date(yr, 3, 1);
+    const dow  = apr1.getDay(); // 0=Sun
+    const offset = dow <= 3 ? -dow : 7 - dow;
+    return new Date(yr, 3, 1 + offset);
   };
   const yr = date.getFullYear();
-  let start = nearestSunToFeb1(yr);
-  if (date < start) start = nearestSunToFeb1(yr - 1);
+  let start = nearestSunToApr1(yr);
+  if (dateToUtcDays(date) < dateToUtcDays(start)) start = nearestSunToApr1(yr - 1);
   return start;
 }
 
 function ukRetailWeek(sunday) {
-  // sunday = start of the week (a Sunday Date)
   const fyStart = fyStartForDate(sunday);
-  const msPerWeek = 7 * 24 * 3600 * 1000;
-  const wk = Math.floor((sunday - fyStart) / msPerWeek) + 1;
-  return wk;
+  // Divide by days (integers) to avoid DST-induced float errors
+  const days = dateToUtcDays(sunday) - dateToUtcDays(fyStart);
+  return Math.floor(days / 7) + 1;
 }
 
 function weekSundayFromDate(d) {
   const copy = new Date(d);
   copy.setHours(0, 0, 0, 0);
-  copy.setDate(copy.getDate() - copy.getDay()); // back to Sunday
+  copy.setDate(copy.getDate() - copy.getDay());
   return copy;
 }
 
@@ -161,7 +167,7 @@ function WeekPicker({ value, onChange }) {
             );
           })}
           <div style={{ marginTop:8, fontSize:11, color:'#94a3b8', textAlign:'center' }}>
-            UK retail weeks — Sun → Sat · FY starts nearest Sunday to 1 Feb
+            UK retail weeks — Sun → Sat · FY starts nearest Sunday to 1 Apr
           </div>
         </div>
       )}
