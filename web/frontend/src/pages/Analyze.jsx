@@ -5,6 +5,170 @@ import { marked } from 'marked';
 
 marked.setOptions({ breaks: true, gfm: true });
 
+// ─── UK Retail Financial Year helpers ────────────────────────────────────────
+// The UK retail financial year (52/53-week year) starts on the Sunday nearest
+// to 1 February each calendar year.  Weeks run Sunday → Saturday.
+// Week 1 = first week of the FY; week numbers restart each FY.
+
+function fyStartForDate(date) {
+  // Find Sunday nearest to 1 Feb of the relevant calendar year.
+  // If the date falls before that Sunday use the previous year's FY start.
+  const nearestSunToFeb1 = (yr) => {
+    const feb1 = new Date(yr, 1, 1); // 1 Feb
+    const dow = feb1.getDay();       // 0=Sun
+    const offset = dow <= 3 ? -dow : 7 - dow; // nearest Sunday (ties go forward)
+    return new Date(yr, 1, 1 + offset);
+  };
+  const yr = date.getFullYear();
+  let start = nearestSunToFeb1(yr);
+  if (date < start) start = nearestSunToFeb1(yr - 1);
+  return start;
+}
+
+function ukRetailWeek(sunday) {
+  // sunday = start of the week (a Sunday Date)
+  const fyStart = fyStartForDate(sunday);
+  const msPerWeek = 7 * 24 * 3600 * 1000;
+  const wk = Math.floor((sunday - fyStart) / msPerWeek) + 1;
+  return wk;
+}
+
+function weekSundayFromDate(d) {
+  const copy = new Date(d);
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - copy.getDay()); // back to Sunday
+  return copy;
+}
+
+function formatWeekLabel(sunday) {
+  const saturday = new Date(sunday); saturday.setDate(sunday.getDate() + 6);
+  const wk = ukRetailWeek(sunday);
+  const mo = (d) => d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  return `${sunday.getFullYear()} ${mo(sunday)} – ${mo(saturday)}  wk${wk}`;
+}
+
+// ─── WeekPicker component ─────────────────────────────────────────────────────
+function WeekPicker({ value, onChange }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const DAY_LETTERS = ['S','M','T','W','T','F','S'];
+
+  // Build calendar grid for viewYear/viewMonth
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const startSun = new Date(firstDay);
+  startSun.setDate(firstDay.getDate() - firstDay.getDay()); // back to Sunday
+
+  const weeks = [];
+  const cur = new Date(startSun);
+  for (let w = 0; w < 6; w++) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      week.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    if (week[0].getMonth() > viewMonth && week[0].getFullYear() >= viewYear) break;
+    weeks.push(week);
+  }
+
+  const selectedSun = value ? weekSundayFromDate(new Date(value.replace(/\s+wk\d+$/, '').replace(/–.*/, '').trim() + ' ' + new Date().getFullYear())) : null;
+  // Better: derive selected Sunday from the stored label's date
+  const [hoverSun, setHoverSun] = useState(null);
+
+  const selectWeek = (sun) => {
+    onChange(formatWeekLabel(sun));
+    setOpen(false);
+  };
+
+  const isSameWeek = (sun, d) => {
+    const s = new Date(sun); s.setHours(0,0,0,0);
+    const t = new Date(d);   t.setHours(0,0,0,0);
+    return t >= s && t < new Date(s.getTime() + 7*86400000);
+  };
+
+  const prevMonth = () => { if (viewMonth === 0) { setViewMonth(11); setViewYear(y=>y-1); } else setViewMonth(m=>m-1); };
+  const nextMonth = () => { if (viewMonth === 11) { setViewMonth(0); setViewYear(y=>y+1); } else setViewMonth(m=>m+1); };
+
+  return (
+    <div ref={ref} style={{ position:'relative' }}>
+      <div
+        className="form-input"
+        onClick={() => setOpen(o=>!o)}
+        style={{ cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', userSelect:'none' }}
+      >
+        <span>{value || 'Válassz hetet…'}</span>
+        <span style={{ color:'#94a3b8' }}>📅</span>
+      </div>
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:200,
+          background:'white', border:'1px solid #e2e8f0', borderRadius:10,
+          boxShadow:'0 8px 32px rgba(0,0,0,.14)', padding:16, minWidth:280,
+        }}>
+          {/* Month nav */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+            <button type="button" onClick={prevMonth} style={{ background:'none', border:'none', cursor:'pointer', fontSize:18, color:'#475569', padding:'0 6px' }}>‹</button>
+            <span style={{ fontWeight:700, fontSize:14, color:'#0f172a' }}>{MONTHS[viewMonth]} {viewYear}</span>
+            <button type="button" onClick={nextMonth} style={{ background:'none', border:'none', cursor:'pointer', fontSize:18, color:'#475569', padding:'0 6px' }}>›</button>
+          </div>
+          {/* Day headers */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom:4 }}>
+            {DAY_LETTERS.map((l,i) => (
+              <div key={i} style={{ textAlign:'center', fontSize:11, fontWeight:700, color: i===0?'#6366f1':'#94a3b8', padding:'2px 0' }}>{l}</div>
+            ))}
+          </div>
+          {/* Weeks */}
+          {weeks.map((week, wi) => {
+            const sun = week[0];
+            const wkNum = ukRetailWeek(sun);
+            const isSelected = value && isSameWeek(weekSundayFromDate(new Date()), sun); // fallback
+            const isHovered = hoverSun && isSameWeek(hoverSun, sun);
+            return (
+              <div
+                key={wi}
+                style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', cursor:'pointer', borderRadius:6,
+                  background: isHovered ? '#ede9fe' : 'transparent', marginBottom:1 }}
+                onMouseEnter={() => setHoverSun(sun)}
+                onMouseLeave={() => setHoverSun(null)}
+                onClick={() => selectWeek(sun)}
+              >
+                {week.map((d, di) => {
+                  const inMonth = d.getMonth() === viewMonth;
+                  const isToday = d.toDateString() === today.toDateString();
+                  return (
+                    <div key={di} style={{
+                      textAlign:'center', padding:'5px 2px', fontSize:12,
+                      color: !inMonth ? '#cbd5e1' : isToday ? '#6366f1' : '#1e293b',
+                      fontWeight: isToday ? 800 : di===0 ? 600 : 400,
+                      borderRadius: di===0 ? '6px 0 0 6px' : di===6 ? '0 6px 6px 0' : 0,
+                    }}>
+                      {di === 0 ? <span style={{ fontSize:9, color:'#94a3b8', display:'block', lineHeight:1 }}>wk{wkNum}</span> : null}
+                      {d.getDate()}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div style={{ marginTop:8, fontSize:11, color:'#94a3b8', textAlign:'center' }}>
+            UK retail weeks — Sun → Sat · FY starts nearest Sunday to 1 Feb
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
   const { t } = useLang();
   if (status === 'ok') return <span className="badge badge-ok">{t('badgeOk')}</span>;
@@ -480,14 +644,8 @@ export default function Analyze() {
   useEffect(() => {
     fetch('/api/employees').then((r) => r.json()).then(setEmployees).catch(() => {});
     fetch('/api/settings/public').then((r) => r.json()).then(setSettings).catch(() => {});
-    const now = new Date();
-    // English financial-year week: starts Sunday, ends Saturday.
-    const sundayStart = new Date(now);
-    sundayStart.setDate(now.getDate() - now.getDay());
-    const saturdayEnd = new Date(sundayStart); saturdayEnd.setDate(sundayStart.getDate() + 6);
-    const locale = lang === 'en' ? 'en-GB' : 'hu-HU';
-    const fmt = (d) => d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
-    setWeekLabel(`${sundayStart.getFullYear()} ${fmt(sundayStart)} – ${fmt(saturdayEnd)}`);
+    const sunday = weekSundayFromDate(new Date());
+    setWeekLabel(formatWeekLabel(sunday));
   }, [lang]);
 
   const addFiles = (list) => {
@@ -607,7 +765,7 @@ export default function Analyze() {
             <div className="card-body">
               <div className="form-group">
                 <label className="form-label">{t('analyzeWeekLabel')}</label>
-                <input className="form-input" type="text" placeholder={t('analyzeWeekLabelPlaceholder')} value={weekLabel} onChange={(e) => setWeekLabel(e.target.value)} />
+                <WeekPicker value={weekLabel} onChange={setWeekLabel} />
               </div>
               <div className="form-group">
                 <label className="form-label">{t('analyzeBudgetOverride')}</label>
