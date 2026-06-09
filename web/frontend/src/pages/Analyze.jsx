@@ -141,81 +141,76 @@ function AnalysisResult({ result, employees, onClose }) {
         </div>
       </div>
 
-      {/* ── Coverage Matrix Table ─────────────────────────────────────────── */}
+      {/* ── Coverage Matrix ───────────────────────────────────────────────── */}
       {Array.isArray(result.coverageMatrix) && result.coverageMatrix.length > 0 && (() => {
         const matrix = result.coverageMatrix;
+        const DAY_HU = { Sun:'Vas', Mon:'Hét', Tue:'Kedd', Wed:'Sze', Thu:'Csüt', Fri:'Pén', Sat:'Szo' };
+        const DAY_FULL_HU = { Sun:'Vasárnap', Mon:'Hétfő', Tue:'Kedd', Wed:'Szerda', Thu:'Csütörtök', Fri:'Péntek', Sat:'Szombat' };
+        const dayAbbr = d => { const m=(d||'').match(/^(\w{3})/); return m?(DAY_HU[m[1]]||m[1]):d; };
+        const dayFull = d => { const m=(d||'').match(/^(\w{3})/); return m?(DAY_FULL_HU[m[1]]||m[1]):d; };
+        const dayDate = d => (d||'').replace(/^\w+\s*/,'');
         const rows = [
-          { key: 'keyholder',   label: '🔑 Keyholder',    sub: 'min. 1' },
-          { key: 'till',        label: '🛒 Till Staff',    sub: 'min. 2' },
-          { key: 'floor',       label: '🏪 Floor Staff',   sub: 'min. 1' },
-          { key: 'nightReplen', label: '🌙 Night Replen',  sub: 'min. 4' },
+          { key:'keyholder',   icon:'🔑', label:'Keyholder',    sub:'min. 1' },
+          { key:'till',        icon:'🛒', label:'Till Staff',    sub:'min. 2' },
+          { key:'floor',       icon:'🏪', label:'Floor Staff',   sub:'min. 1' },
+          { key:'nightReplen', icon:'🌙', label:'Éjszakai KH',   sub:'keyholder' },
         ];
-        const cellStyle = (ok, applicable) => ({
-          textAlign: 'center',
-          padding: '10px 6px',
-          background: !applicable ? '#f8fafc' : ok ? '#f0fdf4' : '#fef2f2',
-          borderBottom: '1px solid #e2e8f0',
-          borderRight: '1px solid #e2e8f0',
-          fontSize: 18,
-          minWidth: 72,
-        });
-        const allOk = matrix.every(d =>
-          rows.every(r => {
-            const cell = d[r.key];
-            return !cell.applicable || cell.ok;
-          })
-        );
-        return (
-          <div className="card" style={{ marginBottom: 20, borderLeft: `4px solid ${allOk ? '#10b981' : '#ef4444'}` }}>
-            <div className="card-header" style={{ background: allOk ? '#ecfdf5' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div className="card-title" style={{ color: allOk ? '#065f46' : '#991b1b' }}>
-                {allOk ? '✅' : '⚠️'} Coverage Check — Mandatory Rules
+        const anyViolation = matrix.some(d => rows.some(r => { const c=d[r.key]||{}; return c.applicable && !c.ok; }));
+
+        const Cell = ({ cell, isNight }) => {
+          if (!cell) return <td style={tdBase('#f8fafc')}>—</td>;
+          if (!cell.applicable) {
+            // No night shift this day → strikethrough dash
+            return (
+              <td style={tdBase('#f8fafc')}>
+                <span style={{ fontSize:15, color:'#cbd5e1', textDecoration:'line-through' }}>—</span>
+              </td>
+            );
+          }
+          const bg = cell.ok ? '#f0fdf4' : '#fff1f2';
+          const tooltip = (cell.who||[]).join(', ') || 'senki';
+          return (
+            <td style={tdBase(bg)} title={tooltip}>
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                <span style={{ fontSize:20 }}>{cell.ok ? '✅' : '❌'}</span>
+                <span style={{ fontSize:11, fontWeight:700, color: cell.ok ? '#16a34a':'#dc2626' }}>
+                  {cell.count}/{cell.required}
+                </span>
               </div>
-              <span style={{ fontSize: 12, color: '#64748b' }}>Green = rule met · Red = violation</span>
+            </td>
+          );
+        };
+        const tdBase = bg => ({ padding:'10px 6px', textAlign:'center', background:bg, borderBottom:'1px solid #e8ecf0', borderRight:'1px solid #e8ecf0', minWidth:68 });
+
+        return (
+          <div className="card" style={{ marginBottom:20, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,.07)' }}>
+            <div style={{ padding:'12px 16px', background: anyViolation?'#fff1f2':'#f0fdf4', borderBottom:'1px solid #e8ecf0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span style={{ fontWeight:700, fontSize:14, color: anyViolation?'#991b1b':'#065f46' }}>
+                {anyViolation?'⚠️':'✅'} Lefedettség ellenőrzése
+              </span>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>Zöld ✅ = OK · Piros ❌ = hiány · — = nincs éjszakai műszak</span>
             </div>
-            <div className="card-body" style={{ padding: 0, overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                 <thead>
                   <tr>
-                    <th style={{ padding: '10px 14px', textAlign: 'left', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 700, color: '#374151', minWidth: 140 }}>
-                      Rule
-                    </th>
+                    <th style={{ padding:'10px 14px', textAlign:'left', background:'#f8fafc', borderBottom:'2px solid #dde3ea', borderRight:'1px solid #e8ecf0', fontWeight:700, color:'#475569', minWidth:150, whiteSpace:'nowrap' }}>Szabály</th>
                     {matrix.map(d => (
-                      <th key={d.day} style={{ padding: '10px 6px', textAlign: 'center', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap' }}>
-                        {(d.day || '').replace(/\s+\d{2}\s+\w+/, '').trim() || d.day}
-                        <div style={{ fontWeight: 400, fontSize: 11, color: '#94a3b8' }}>
-                          {(d.day || '').replace(/^\w+\s+/, '')}
-                        </div>
+                      <th key={d.day} title={dayFull(d.day)} style={{ padding:'8px 6px', textAlign:'center', background:'#f8fafc', borderBottom:'2px solid #dde3ea', borderRight:'1px solid #e8ecf0', fontWeight:700, color:'#374151', whiteSpace:'nowrap' }}>
+                        <div style={{ fontSize:13 }}>{dayAbbr(d.day)}</div>
+                        <div style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginTop:1 }}>{dayDate(d.day)}</div>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(row => (
-                    <tr key={row.key}>
-                      <td style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', fontWeight: 600, color: '#1e293b', background: '#fafafa' }}>
-                        {row.label}
-                        <div style={{ fontWeight: 400, fontSize: 11, color: '#94a3b8' }}>{row.sub}</div>
+                  {rows.map((row,ri) => (
+                    <tr key={row.key} style={{ background: ri%2===0?'white':'#fafbfc' }}>
+                      <td style={{ padding:'10px 14px', borderBottom:'1px solid #e8ecf0', borderRight:'1px solid #e8ecf0', fontWeight:600, color:'#1e293b', whiteSpace:'nowrap' }}>
+                        {row.icon} {row.label}
+                        <div style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginTop:1 }}>{row.sub}</div>
                       </td>
-                      {matrix.map(d => {
-                        const cell = d[row.key] || {};
-                        const applicable = cell.applicable !== false;
-                        return (
-                          <td key={d.day} style={cellStyle(cell.ok, applicable)} title={applicable ? (cell.who||[]).join(', ') || 'Nobody' : 'No night shift'}>
-                            {!applicable
-                              ? <span style={{ fontSize: 13, color: '#cbd5e1' }}>—</span>
-                              : cell.ok
-                                ? <span title={`${cell.count} / ${cell.required} · ${(cell.who||[]).join(', ')}`}>✅</span>
-                                : <span title={`${cell.count} / ${cell.required} · ${(cell.who||[]).join(', ') || 'nobody'}`}>❌</span>
-                            }
-                            {applicable && (
-                              <div style={{ fontSize: 10, color: cell.ok ? '#16a34a' : '#dc2626', fontWeight: 600, marginTop: 2 }}>
-                                {cell.count}/{cell.required}
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
+                      {matrix.map(d => <Cell key={d.day} cell={d[row.key]} isNight={row.key==='nightReplen'} />)}
                     </tr>
                   ))}
                 </tbody>
@@ -225,87 +220,148 @@ function AnalysisResult({ result, employees, onClose }) {
         );
       })()}
 
+      {/* ── Narrative sections ────────────────────────────────────────────── */}
       {narrative && (() => {
-        // Split narrative into EN and HU sections by looking for the === dividers.
-        // Each section is then rendered as structured markdown (headers become
-        // bold banners, bullet lines get their own row with a colour indicator
-        // for CRITICAL / overtime keywords).
-        const enMatch = narrative.match(/===\s*ENGLISH ANALYSIS\s*===([\s\S]*?)(?:===\s*MAGYAR ELEMZÉS\s*===|$)/i);
-        const huMatch = narrative.match(/===\s*MAGYAR ELEMZÉS\s*===([\s\S]*?)(?:===|$)/i);
-        const enText  = enMatch ? enMatch[1].trim() : narrative;
-        const huText  = huMatch ? huMatch[1].trim() : null;
+        const enRaw = narrative.match(/===\s*ENGLISH\s*===([\s\S]*?)(?:===|$)/i)?.[1]?.trim() || '';
+        const huRaw = narrative.match(/===\s*MAGYAR\s*===([\s\S]*?)(?:===|$)/i)?.[1]?.trim() || '';
 
-        const renderSection = (text) => {
-          if (!text) return null;
-          // Parse lines into blocks: headings (ALL CAPS lines or lines ending with newline after them),
-          // bullet points (• or - prefix), and plain text.
-          return text.split('\n').map((line, i) => {
-            const trimmed = line.trim();
-            if (!trimmed) return <div key={i} style={{ height: 8 }} />;
-            // Section heading: ALL CAPS, no bullet
-            if (/^[A-ZÁÉÍÓÖŐÚÜŰ\s\-—\/]+$/.test(trimmed) && trimmed.length > 3 && !trimmed.startsWith('•')) {
-              return (
-                <div key={i} style={{ fontWeight: 800, fontSize: 13, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #e2e8f0', paddingBottom: 4, marginTop: 16, marginBottom: 6 }}>
-                  {trimmed}
-                </div>
-              );
-            }
-            // Bullet line
-            const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-');
-            const content  = isBullet ? trimmed.replace(/^[•\-]\s*/, '') : trimmed;
-            const isCritical = /keyholder|CRITICAL|KRITIKUS|hiányzik.*keyholder|no keyholder/i.test(content);
-            const isOver     = /over|túlóra|felesleg|\+\d|\bover\b/i.test(content);
-            return (
-              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 4, paddingLeft: isBullet ? 0 : 0 }}>
-                {isBullet && (
-                  <span style={{ color: isCritical ? '#dc2626' : isOver ? '#d97706' : '#64748b', fontWeight: 700, flexShrink: 0, lineHeight: '1.6' }}>
-                    {isCritical ? '⚠' : isOver ? '▲' : '•'}
-                  </span>
-                )}
-                <span style={{ fontSize: 13, lineHeight: 1.65, color: isCritical ? '#dc2626' : '#374151', fontWeight: isCritical ? 700 : 400 }}>
-                  {content}
-                </span>
+        // Parse [SECTION] blocks out of raw text
+        const parseSections = (text) => {
+          const blocks = {};
+          const re = /\[([^\]]+)\]([\s\S]*?)(?=\[[^\]]+\]|$)/g;
+          let m;
+          while ((m = re.exec(text))) blocks[m[1].trim().toUpperCase()] = m[2].trim();
+          return blocks;
+        };
+        const enSec = parseSections(enRaw);
+        const huSec = parseSections(huRaw);
+
+        // Overtime employees from parsed data
+        const overEmps = empResults.filter(e => e.status === 'over');
+
+        const BulletList = ({ text, warn }) => {
+          if (!text) return <span style={{ color:'#94a3b8', fontSize:13 }}>—</span>;
+          return (
+            <div>
+              {text.split('\n').map((line, i) => {
+                const t = line.trim();
+                if (!t) return null;
+                const content = t.replace(/^[•\-]\s*/,'');
+                const isWarn = warn || /keyholder|critical|kritikus/i.test(content);
+                return (
+                  <div key={i} style={{ display:'flex', gap:8, alignItems:'flex-start', marginBottom:5 }}>
+                    <span style={{ color: isWarn?'#dc2626':'#6366f1', fontWeight:700, flexShrink:0, marginTop:1 }}>{isWarn?'⚠':'•'}</span>
+                    <span style={{ fontSize:13, lineHeight:1.6, color: isWarn?'#dc2626':'#374151', fontWeight: isWarn?600:400 }}>{content}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        };
+
+        const Collapsible = ({ title, accent, bg, children, defaultOpen=false }) => {
+          const [open, setOpen] = React.useState(defaultOpen);
+          return (
+            <div className="card" style={{ marginBottom:12, borderLeft:`4px solid ${accent}`, overflow:'hidden' }}>
+              <div onClick={() => setOpen(o=>!o)} style={{ padding:'11px 16px', background:bg, display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', userSelect:'none' }}>
+                <span style={{ fontWeight:700, fontSize:13, color:accent }}>{title}</span>
+                <span style={{ fontSize:12, color:'#94a3b8' }}>{open?'▲ bezár':'▼ megnyit'}</span>
               </div>
-            );
-          });
+              {open && <div className="card-body" style={{ paddingTop:12 }}>{children}</div>}
+            </div>
+          );
         };
 
         return (
-          <div style={{ marginBottom: 20 }}>
-            {/* English section */}
-            <div className="card" style={{ marginBottom: 12, borderLeft: '4px solid #3b82f6' }}>
-              <div className="card-header" style={{ background: '#eff6ff' }}>
-                <div className="card-title" style={{ color: '#1d4ed8' }}>📋 English Analysis</div>
-              </div>
-              <div className="card-body">{renderSection(enText)}</div>
-            </div>
-            {/* Hungarian section */}
-            {huText && (
-              <div className="card" style={{ marginBottom: 12, borderLeft: '4px solid #10b981' }}>
-                <div className="card-header" style={{ background: '#ecfdf5' }}>
-                  <div className="card-title" style={{ color: '#065f46' }}>📋 Magyar Elemzés</div>
+          <div style={{ marginBottom:20 }}>
+
+            {/* Budget summary — always visible, not collapsible */}
+            <div className="card" style={{ marginBottom:16, borderLeft:`4px solid ${result.budgetStatus==='over'?'#ef4444':result.budgetStatus==='under'?'#f59e0b':'#10b981'}` }}>
+              <div className="card-header" style={{ background: result.budgetStatus==='over'?'#fff1f2':result.budgetStatus==='under'?'#fffbeb':'#f0fdf4' }}>
+                <div className="card-title" style={{ color: result.budgetStatus==='over'?'#991b1b':result.budgetStatus==='under'?'#92400e':'#065f46' }}>
+                  💰 {result.budgetStatus==='over'?'Túlköltés!':result.budgetStatus==='under'?'Hiány':'Büdzsé — OK'}
                 </div>
-                <div className="card-body">{renderSection(huText)}</div>
+              </div>
+              <div className="card-body">
+                <div style={{ display:'flex', gap:24, flexWrap:'wrap', marginBottom: enSec['BUDGET']||huSec['BÜDZSÉ'] ? 12 : 0 }}>
+                  <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>ENGEDÉLYEZETT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.approvedBudget ?? 0} h</div></div>
+                  <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>FELHASZNÁLT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.totalScheduledHours ?? 0} h</div></div>
+                  <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>KÜLÖNBSÉG</div>
+                    <div style={{ fontSize:22, fontWeight:800, color: result.budgetStatus==='over'?'#dc2626':result.budgetStatus==='under'?'#d97706':'#16a34a' }}>
+                      {(result.budgetDifference??0)>0?'+':''}{(result.budgetDifference??0).toFixed(1)} h
+                    </div>
+                  </div>
+                </div>
+                {(enSec['BUDGET']||huSec['BÜDZSÉ']) && <BulletList text={enSec['BUDGET']} />}
+              </div>
+            </div>
+
+            {/* Overtime table */}
+            {overEmps.length > 0 && (
+              <div className="card" style={{ marginBottom:16, borderLeft:'4px solid #f59e0b' }}>
+                <div className="card-header" style={{ background:'#fffbeb' }}>
+                  <div className="card-title" style={{ color:'#92400e' }}>▲ Túlórák részletei</div>
+                </div>
+                <div className="card-body" style={{ padding:0 }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+                    <thead>
+                      <tr style={{ background:'#fef3c7' }}>
+                        <th style={{ padding:'8px 14px', textAlign:'left', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Dolgozó</th>
+                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Szerződéses</th>
+                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Beosztott</th>
+                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Felesleg</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overEmps.map((e,i) => (
+                        <tr key={e.name} style={{ background: i%2===0?'white':'#fffbeb' }}>
+                          <td style={{ padding:'8px 14px', fontWeight:600, borderBottom:'1px solid #fef3c7' }}>{e.name}</td>
+                          <td style={{ padding:'8px 14px', textAlign:'center', borderBottom:'1px solid #fef3c7' }}>{e.contractedHours} h</td>
+                          <td style={{ padding:'8px 14px', textAlign:'center', borderBottom:'1px solid #fef3c7' }}>{e.scheduledHours} h</td>
+                          <td style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#dc2626', borderBottom:'1px solid #fef3c7' }}>+{e.difference} h</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
+
+            {/* Suggestions */}
+            {(enSec['SUGGESTIONS'] || huSec['JAVASLATOK']) && (
+              <Collapsible title="💡 Javaslatok a módosításokra" accent="#6366f1" bg="#f5f3ff" defaultOpen={true}>
+                {enSec['SUGGESTIONS'] && <><div style={{ fontSize:11, fontWeight:700, color:'#6366f1', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>English</div><BulletList text={enSec['SUGGESTIONS']} /><div style={{ height:10 }} /></>}
+                {huSec['JAVASLATOK'] && <><div style={{ fontSize:11, fontWeight:700, color:'#6366f1', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Magyar</div><BulletList text={huSec['JAVASLATOK']} /></>}
+              </Collapsible>
+            )}
+
+            {/* Daily issues EN */}
+            {enSec['DAILY ISSUES'] && (
+              <Collapsible title="📋 Daily Issues (English)" accent="#3b82f6" bg="#eff6ff">
+                <BulletList text={enSec['DAILY ISSUES']} warn={false} />
+              </Collapsible>
+            )}
+
+            {/* Daily issues HU */}
+            {huSec['NAPI HIBÁK'] && (
+              <Collapsible title="📋 Napi hibák (Magyar)" accent="#10b981" bg="#ecfdf5">
+                <BulletList text={huSec['NAPI HIBÁK']} warn={false} />
+              </Collapsible>
+            )}
+
             {result.aiUsage && (
-              <div style={{ fontSize: 12, color: 'var(--gray-500)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '4px 0' }}>
+              <div style={{ fontSize:11, color:'#94a3b8', display:'flex', gap:12, flexWrap:'wrap', padding:'2px 0' }}>
                 <span>🤖 {result.aiUsage.model}</span>
-                <span>{result.aiUsage.inputTokens.toLocaleString()} in / {result.aiUsage.outputTokens.toLocaleString()} out tokens</span>
-                <span style={{ fontWeight: 700, color: 'var(--gray-700)' }}>≈ ${result.aiUsage.estimatedCostUSD.toFixed(4)}</span>
+                <span>{result.aiUsage.inputTokens?.toLocaleString()} in / {result.aiUsage.outputTokens?.toLocaleString()} out</span>
+                <span>≈ ${result.aiUsage.estimatedCostUSD?.toFixed(4)}</span>
               </div>
             )}
           </div>
         );
       })()}
+
       {Array.isArray(result.parseLog) && result.parseLog.length > 0 && (
         <ParseLogPanel result={result} />
-      )}
-
-      {!narrative && summary && (
-        <div className="alert alert-info" style={{ marginBottom: 24 }}>
-          <strong>{t('resultSummaryLabel')}:</strong> {summary}
-        </div>
       )}
 
       <div className="result-grid">

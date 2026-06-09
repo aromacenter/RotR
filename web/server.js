@@ -791,38 +791,35 @@ MANDATORY COVERAGE RULES (flag as a violation if not met):
 4. If no Keyholder is on shift during store hours — flag it explicitly as a CRITICAL issue.
 5. On SUNDAY, do not count any employee scheduled before 08:00 toward the coverage rules — the store is closed until 08:00.
 
-OUTPUT FORMAT — write two clearly separated sections, ENGLISH first then HUNGARIAN:
+OUTPUT RULES:
+- Be concise. Only describe problems and what needs fixing — no praise, no filler.
+- Always name employees, state exact hours, give concrete actionable instructions.
+- Use bullet points (•) for every item. No plain paragraphs.
+- Produce FOUR clearly delimited sections using the exact markers below.
 
-=== ENGLISH ANALYSIS ===
+=== ENGLISH ===
 
-BUDGET SUMMARY
-• This week X hours are available (approved budget). Y hours have been used. [Over/Under/On budget] by Z hours.
-[If over budget: call this out prominently and list ONLY the over-contracted employees with their excess hours.]
+[BUDGET]
+• Approved: Xh | Used: Yh | [OVER/UNDER/OK]: Zh
+• [If over: list each over-contracted employee as: Name — contracted Xh, scheduled Yh, excess +Zh]
 
-OVERTIME — EMPLOYEES TO CUT BACK
-[For each employee scheduled over their contracted hours: name, contracted hours, scheduled hours, excess. Suggest which shift(s) to shorten or remove, always keeping mandatory coverage rules in place.]
+[DAILY ISSUES]
+• [Only list days where a coverage rule is violated. Format: DAY — what is missing (e.g. no Keyholder, only 1 Till staff). Skip days with no issues entirely.]
 
-COVERAGE WARNINGS
-[List every day/shift where keyholder, till count, floor count, or night replen count falls below the mandatory minimum. Be specific: day, time window, what is missing, who is on shift.]
+[SUGGESTIONS]
+• [Concrete fix for every issue listed above: which shift to add, shorten, swap, or reassign. Always state the day, the employee, and the exact change needed. Keep mandatory coverage rules intact.]
 
-=== MAGYAR ELEMZÉS ===
+=== MAGYAR ===
 
-BÜDZSÉ ÖSSZEFOGLALÓ
-• Erre a hétre X óra áll rendelkezésre (jóváhagyott keret). Ebből Y órát használtál el. [Túllépés/Hiány/Egyensúly]: Z óra.
-[Ha túllépés van: emeld ki és listázd CSAK azokat a dolgozókat, akik a szerződéses óráikon felül vannak, a felesleges óraszámmal.]
+[BÜDZSÉ]
+• Engedélyezett: Xó | Felhasználva: Yó | [TÚLLÉPÉS/HIÁNY/OK]: Zó
+• [Ha túllépés van: minden túlórás dolgozó: Név — szerződés Xó, beosztott Yó, felesleg +Zó]
 
-TÚLÓRA — VISSZAVÁGANDÓ DOLGOZÓK
-[Minden szerződéses óráját meghaladó dolgozónál: név, szerződéses órák, beosztott órák, különbség. Konkrét javaslat melyik műszakot kell rövidíteni vagy törölni, mindig betartva a kötelező lefedettségi szabályokat.]
+[NAPI HIBÁK]
+• [Csak azokat a napokat listázd, ahol lefedettségi szabály sérül. Formátum: NAP — mi hiányzik (pl. nincs Keyholder, csak 1 Till staff). Hibátlan napokat hagyd ki.]
 
-FEDEZETI FIGYELMEZTETÉSEK
-[Listázd azokat a napokat/műszakokat, ahol a keyholder, tills létszám, floor vagy éjszakai replen létszám a kötelező minimum alá esik. Konkrétan: nap, időablak, mi hiányzik, kik vannak beosztva.]
-
-RULES FOR WRITING:
-- Start EVERY section with its heading exactly as shown above (use the === and bold headings).
-- Use bullet points (•) within sections — no plain paragraphs.
-- Do NOT repeat the same information in English and Hungarian — the content must match but the language changes.
-- Be concise and specific: always name employees, state exact hours, give concrete actionable recommendations.
-- Never use vague language like "consider adjusting" — say exactly what to change.`;
+[JAVASLATOK]
+• [Minden fenti hiba konkrét javítása: melyik műszakot kell hozzáadni, rövidíteni, cserélni vagy átszervezni. Mindig add meg a napot, a dolgozót és a pontos változtatást. A kötelező lefedettségi szabályokat tartsd be.]`;
 
 app.get('/api/settings/public', requireAuth, (req, res) => {
   const budget = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');
@@ -1082,12 +1079,13 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
         area(e).includes('floor') || skills(e).includes('floor_supervisor')
       );
       // Night shifts: employees in Replenishment area on a night-time shift
-      const nightReplen = onShift.filter(e =>
-        (area(e).includes('replen') || area(e).includes('replenishment')) &&
+      // Is there ANY night shift at all this day (any area)?
+      const hasNightShift = parsedEmployees.some(e =>
         (e.shifts||[]).some(s => s.day === day && s.start && s.end && isNightShift(s.start, s.end))
       );
-      // Is there ANY night shift at all this day (any area)?
-      const hasNightShift = onShift.some(e =>
+      // Keyholder present on a night shift specifically
+      const nightKeyholders = parsedEmployees.filter(e =>
+        skills(e).includes('keyholder') &&
         (e.shifts||[]).some(s => s.day === day && s.start && s.end && isNightShift(s.start, s.end))
       );
 
@@ -1096,9 +1094,11 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
         keyholder:  { ok: keyholders.length >= 1, count: keyholders.length, required: 1, who: keyholders.map(e=>e.name) },
         till:       { ok: tillStaff.length >= 2,  count: tillStaff.length,  required: 2, who: tillStaff.map(e=>e.name) },
         floor:      { ok: floorStaff.length >= 1, count: floorStaff.length, required: 1, who: floorStaff.map(e=>e.name) },
+        // Night shift: applicable only when a night shift exists.
+        // Rule: at least 1 Keyholder must be present on the night shift.
         nightReplen: hasNightShift
-          ? { ok: nightReplen.length >= 4, count: nightReplen.length, required: 4, who: nightReplen.map(e=>e.name), applicable: true }
-          : { ok: true, count: 0, required: 4, who: [], applicable: false }, // no night shift → rule doesn't apply
+          ? { ok: nightKeyholders.length >= 1, count: nightKeyholders.length, required: 1, who: nightKeyholders.map(e=>e.name), applicable: true }
+          : { ok: false, count: 0, required: 0, who: [], applicable: false }, // no night shift → show strikethrough
       };
     });
     analysis.coverageMatrix = coverageMatrix;
