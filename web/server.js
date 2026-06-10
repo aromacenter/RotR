@@ -1237,6 +1237,13 @@ app.use((err, req, res, _next) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
+// Migrate stored prompt: if it doesn't contain the ALWAYS-suggest instruction, reset to the new default.
+const storedPrompt = db.prepare('SELECT value FROM settings WHERE key = ?').get('analysis_prompt');
+if (storedPrompt && !storedPrompt.value.includes('ALWAYS provide at least 3')) {
+  db.prepare('DELETE FROM settings WHERE key = ?').run('analysis_prompt');
+  console.log('Prompt migrated to new default (ALWAYS-suggest instruction added).');
+}
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Rota Planner fut: http://localhost:${PORT}`);
