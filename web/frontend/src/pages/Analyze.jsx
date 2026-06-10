@@ -492,19 +492,31 @@ function AnalysisResult({ result, employees, onClose, onSidebarData }) {
               </Collapsible>
             )}
 
-            {/* English analysis box */}
-            {(enSec['DAILY ISSUES'] || enSec['SUGGESTIONS']) && (
+            {/* English analysis box — always shown; falls back to raw text */}
+            {(enRaw || narrative) && (
               <Collapsible title="📋 English Analysis" accent="#3b82f6" bg="#eff6ff" defaultOpen={false}>
-                {enSec['DAILY ISSUES'] && <><div style={{ fontSize:11, fontWeight:700, color:'#3b82f6', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Daily Issues</div><BulletList text={enSec['DAILY ISSUES']} warn={false} /></>}
-                {enSec['SUGGESTIONS'] && <><div style={{ height:10 }} /><div style={{ fontSize:11, fontWeight:700, color:'#3b82f6', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Suggestions</div><BulletList text={enSec['SUGGESTIONS']} /></>}
+                {(enSec['DAILY ISSUES'] || enSec['SUGGESTIONS']) ? (
+                  <>
+                    {enSec['DAILY ISSUES'] && <><div style={{ fontSize:11, fontWeight:700, color:'#3b82f6', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Daily Issues</div><BulletList text={enSec['DAILY ISSUES']} warn={false} /></>}
+                    {enSec['SUGGESTIONS'] && <><div style={{ height:10 }} /><div style={{ fontSize:11, fontWeight:700, color:'#3b82f6', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Suggestions</div><BulletList text={enSec['SUGGESTIONS']} /></>}
+                  </>
+                ) : (
+                  <BulletList text={enRaw || narrative} warn={false} />
+                )}
               </Collapsible>
             )}
 
-            {/* Hungarian analysis box */}
-            {(huSec['NAPI HIBÁK'] || huSec['JAVASLATOK']) && (
+            {/* Hungarian analysis box — shown when MAGYAR section exists */}
+            {huRaw && (
               <Collapsible title="📋 Magyar Elemzés" accent="#10b981" bg="#ecfdf5" defaultOpen={false}>
-                {huSec['NAPI HIBÁK'] && <><div style={{ fontSize:11, fontWeight:700, color:'#10b981', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Napi Hibák</div><BulletList text={huSec['NAPI HIBÁK']} warn={false} /></>}
-                {huSec['JAVASLATOK'] && <><div style={{ height:10 }} /><div style={{ fontSize:11, fontWeight:700, color:'#10b981', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Javaslatok</div><BulletList text={huSec['JAVASLATOK']} /></>}
+                {(huSec['NAPI HIBÁK'] || huSec['JAVASLATOK']) ? (
+                  <>
+                    {huSec['NAPI HIBÁK'] && <><div style={{ fontSize:11, fontWeight:700, color:'#10b981', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Napi Hibák</div><BulletList text={huSec['NAPI HIBÁK']} warn={false} /></>}
+                    {huSec['JAVASLATOK'] && <><div style={{ height:10 }} /><div style={{ fontSize:11, fontWeight:700, color:'#10b981', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Javaslatok</div><BulletList text={huSec['JAVASLATOK']} /></>}
+                  </>
+                ) : (
+                  <BulletList text={huRaw} warn={false} />
+                )}
               </Collapsible>
             )}
           </div>
