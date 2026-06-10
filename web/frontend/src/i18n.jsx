@@ -11,6 +11,8 @@ const translations = {
     navEmployees: 'Munkavállalók',
     navHistory: 'Előzmények',
     navSettings: 'Beállítások',
+    navParseLog: 'Parse Log',
+    overtimeDetails: 'Túlórák részletei',
 
     // Login
     loginTitle: 'RotR',
@@ -198,6 +200,8 @@ const translations = {
     navEmployees: 'Employees',
     navHistory: 'History',
     navSettings: 'Settings',
+    navParseLog: 'Parse Log',
+    overtimeDetails: 'Overtime details',
 
     // Login
     loginTitle: 'RotR',

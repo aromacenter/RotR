@@ -284,10 +284,14 @@ function ParseLogPanel({ result }) {
   );
 }
 
-function AnalysisResult({ result, employees, onClose }) {
+function AnalysisResult({ result, employees, onClose, onSidebarData }) {
   const { t } = useLang();
   const [showPrint, setShowPrint] = React.useState(false);
   const { employees: empResults = [], violations = [], suggestions = [], summary, narrative } = result;
+
+  React.useEffect(() => {
+    if (onSidebarData) onSidebarData({ aiUsage: result.aiUsage, parseLog: result.parseLog });
+  }, [result]);
 
   if (showPrint) {
     return <PrintView analysis={result} employees={employees} onClose={() => setShowPrint(false)} />;
@@ -445,36 +449,17 @@ function AnalysisResult({ result, employees, onClose }) {
         return (
           <div style={{ marginBottom:20 }}>
 
-            {/* Budget summary — collapsible, closed by default */}
-            <Collapsible
-              title={`💰 Büdzsé — ${result.budgetStatus==='over'?'Túlköltés!':result.budgetStatus==='under'?'Hiány':'OK'}`}
-              accent={result.budgetStatus==='over'?'#ef4444':result.budgetStatus==='under'?'#f59e0b':'#10b981'}
-              bg={result.budgetStatus==='over'?'#fff1f2':result.budgetStatus==='under'?'#fffbeb':'#f0fdf4'}
-              defaultOpen={false}
-            >
-              <div style={{ display:'flex', gap:24, flexWrap:'wrap', marginBottom: enSec['BUDGET']||huSec['BÜDZSÉ'] ? 12 : 0 }}>
-                <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>ENGEDÉLYEZETT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.approvedBudget ?? 0} h</div></div>
-                <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>FELHASZNÁLT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.totalScheduledHours ?? 0} h</div></div>
-                <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>KÜLÖNBSÉG</div>
-                  <div style={{ fontSize:22, fontWeight:800, color: result.budgetStatus==='over'?'#dc2626':result.budgetStatus==='under'?'#d97706':'#16a34a' }}>
-                    {(result.budgetDifference??0)>0?'+':''}{(result.budgetDifference??0).toFixed(1)} h
-                  </div>
-                </div>
-              </div>
-              {(enSec['BUDGET']||huSec['BÜDZSÉ']) && <BulletList text={enSec['BUDGET']} />}
-            </Collapsible>
-
             {/* Overtime table — collapsible, closed by default */}
             {overEmps.length > 0 && (
-              <Collapsible title={`▲ Túlórák részletei (${overEmps.length} fő)`} accent="#f59e0b" bg="#fffbeb" defaultOpen={false}>
+              <Collapsible title={`▲ ${t('overtimeDetails')} (${overEmps.length} ${t('person')})`} accent="#f59e0b" bg="#fffbeb" defaultOpen={false}>
                 <div style={{ padding:0, margin:-12 }}>
                   <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                     <thead>
                       <tr style={{ background:'#fef3c7' }}>
-                        <th style={{ padding:'8px 14px', textAlign:'left', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Dolgozó</th>
-                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Szerződéses</th>
-                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Beosztott</th>
-                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>Felesleg</th>
+                        <th style={{ padding:'8px 14px', textAlign:'left', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>{t('colName')}</th>
+                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>{t('colContracted')}</th>
+                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>{t('colScheduled')}</th>
+                        <th style={{ padding:'8px 14px', textAlign:'center', fontWeight:700, color:'#78350f', borderBottom:'1px solid #fde68a' }}>{t('colDiff')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -507,21 +492,9 @@ function AnalysisResult({ result, employees, onClose }) {
                 {huSec['JAVASLATOK'] && <><div style={{ height:10 }} /><div style={{ fontSize:11, fontWeight:700, color:'#10b981', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Javaslatok</div><BulletList text={huSec['JAVASLATOK']} /></>}
               </Collapsible>
             )}
-
-            {result.aiUsage && (
-              <div style={{ fontSize:11, color:'#94a3b8', display:'flex', gap:12, flexWrap:'wrap', padding:'2px 0' }}>
-                <span>🤖 {result.aiUsage.model}</span>
-                <span>{result.aiUsage.inputTokens?.toLocaleString()} in / {result.aiUsage.outputTokens?.toLocaleString()} out</span>
-                <span>≈ ${result.aiUsage.estimatedCostUSD?.toFixed(4)}</span>
-              </div>
-            )}
           </div>
         );
       })()}
-
-      {Array.isArray(result.parseLog) && result.parseLog.length > 0 && (
-        <ParseLogPanel result={result} />
-      )}
 
       <div className="result-grid">
         <div className="stat-card">
@@ -551,36 +524,6 @@ function AnalysisResult({ result, employees, onClose }) {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-header"><div className="card-title">{t('resultEmployeeDetails')}</div></div>
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('colName')}</th>
-                <th>{t('colScheduled')}</th>
-                <th>{t('colContracted')}</th>
-                <th>{t('colDiff')}</th>
-                <th>{t('colStatus')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {empResults.map((emp, i) => (
-                <tr key={i} className={`employee-row-${emp.status}`}>
-                  <td><strong>{emp.name}</strong></td>
-                  <td>{emp.scheduledHours ?? '?'} h</td>
-                  <td>{emp.contractedHours ?? '?'} h</td>
-                  <td style={{ color: emp.difference > 0 ? 'var(--danger)' : emp.difference < 0 ? 'var(--warning)' : 'var(--success)', fontWeight: 600 }}>
-                    {emp.difference != null ? (emp.difference > 0 ? '+' : '') + emp.difference.toFixed(1) + ' h' : '–'}
-                  </td>
-                  <td><StatusBadge status={emp.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <div className="two-col">
         <div className="card">
           <div className="card-header"><div className="card-title">{t('violationsTitle')} ({violations.length})</div></div>
@@ -603,7 +546,7 @@ function AnalysisResult({ result, employees, onClose }) {
   );
 }
 
-export default function Analyze() {
+export default function Analyze({ onSidebarData }) {
   const { t, lang } = useLang();
   const [employees, setEmployees] = useState([]);
   const [settings, setSettings] = useState({ weeklyBudget: 0 });
@@ -687,7 +630,7 @@ export default function Analyze() {
     }
   };
 
-  if (result) return <AnalysisResult result={result} employees={employees} onClose={() => { setResult(null); setFiles([]); }} />;
+  if (result) return <AnalysisResult result={result} employees={employees} onClose={() => { setResult(null); setFiles([]); }} onSidebarData={onSidebarData} />;
 
   const effectiveBudget = parseFloat(customBudget) || settings.weeklyBudget || 0;
 

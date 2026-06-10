@@ -807,7 +807,7 @@ OUTPUT RULES:
 • [Only list days where a coverage rule is violated. Format: DAY — what is missing (e.g. no Keyholder, only 1 Till staff). Skip days with no issues entirely.]
 
 [SUGGESTIONS]
-• [Concrete fix for every issue listed above: which shift to add, shorten, swap, or reassign. Always state the day, the employee, and the exact change needed. Keep mandatory coverage rules intact.]
+• [ALWAYS provide at least 3 actionable suggestions to maximise coverage and efficiency, even if no violations exist. Include: shifts that could be optimised, employees who could cover gaps, ways to balance hours closer to contracted limits, or proactive measures to ensure all coverage rules are met every day. Always state the day, the employee, and the exact change needed.]
 
 === MAGYAR ===
 
@@ -819,7 +819,7 @@ OUTPUT RULES:
 • [Csak azokat a napokat listázd, ahol lefedettségi szabály sérül. Formátum: NAP — mi hiányzik (pl. nincs Keyholder, csak 1 Till staff). Hibátlan napokat hagyd ki.]
 
 [JAVASLATOK]
-• [Minden fenti hiba konkrét javítása: melyik műszakot kell hozzáadni, rövidíteni, cserélni vagy átszervezni. Mindig add meg a napot, a dolgozót és a pontos változtatást. A kötelező lefedettségi szabályokat tartsd be.]`;
+• [MINDIG adj meg legalább 3 konkrét javaslatot a maximális lefedettség és hatékonyság érdekében, akkor is, ha nincs szabálysértés. Ide tartozhat: optimalizálható műszakok, dolgozók akik fedezhetik a hiányokat, az órák kiegyensúlyozása a szerződéses korlátokhoz, vagy megelőző intézkedések a lefedettség biztosítására minden napra. Mindig add meg a napot, a dolgozót és a pontos változtatást.]`;
 
 app.get('/api/settings/public', requireAuth, (req, res) => {
   const budget = db.prepare('SELECT value FROM settings WHERE key = ?').get('weekly_budget');

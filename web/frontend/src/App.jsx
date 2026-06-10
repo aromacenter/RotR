@@ -10,6 +10,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
   const [page, setPage] = useState('analyze');
+  const [sidebarData, setSidebarData] = useState(null);
 
   useEffect(() => {
     fetch('/api/me')
@@ -33,18 +34,24 @@ export default function App() {
     return <Login onLogin={setUser} />;
   }
 
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    setUser(null);
+    setSidebarData(null);
+  };
+
   const renderPage = () => {
     switch (page) {
-      case 'analyze': return <Analyze />;
+      case 'analyze': return <Analyze onSidebarData={setSidebarData} />;
       case 'employees': return <Employees />;
       case 'history': return <History onNavigate={setPage} />;
-      case 'settings': return <Settings onLogout={() => setUser(null)} />;
-      default: return <Analyze />;
+      case 'settings': return <Settings onLogout={handleLogout} />;
+      default: return <Analyze onSidebarData={setSidebarData} />;
     }
   };
 
   return (
-    <Layout page={page} onNavigate={setPage} username={user}>
+    <Layout page={page} onNavigate={setPage} username={user} onLogout={handleLogout} sidebarData={sidebarData}>
       {renderPage()}
     </Layout>
   );
