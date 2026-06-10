@@ -17,7 +17,8 @@ export default function Settings({ onLogout }) {
       .then((r) => r.json())
       .then((d) => {
         if (d.weeklyBudget) setWeeklyBudget(String(d.weeklyBudget));
-        if (d.analysisPrompt) setAnalysisPrompt(d.analysisPrompt);
+        // Always show something: saved custom prompt or the default
+        setAnalysisPrompt(d.analysisPrompt || d.defaultPrompt || '');
         if (d.defaultPrompt) setDefaultPrompt(d.defaultPrompt);
       });
   }, []);
@@ -117,22 +118,24 @@ export default function Settings({ onLogout }) {
                 className="form-input"
                 value={analysisPrompt}
                 onChange={(e) => setAnalysisPrompt(e.target.value)}
-                rows={8}
-                style={{ fontFamily: 'monospace', fontSize: 13, resize: 'vertical' }}
-                placeholder="e.g. Focus on lunch hour coverage (12:00-14:00). Flag anyone working more than 6 hours without a break. Ensure at least one keyholder per shift..."
+                rows={24}
+                style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical', lineHeight: 1.6 }}
               />
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? <><span className="spinner" />Saving...</> : 'Save Prompt'}
+                {loading ? <><span className="spinner" />{t('saving')}</> : t('saveButton')}
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => setAnalysisPrompt(defaultPrompt)}
               >
-                Reset to default
+                {t('resetToDefault')}
               </button>
+              {analysisPrompt !== defaultPrompt && (
+                <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>● {t('promptModified')}</span>
+              )}
             </div>
           </form>
         </div>

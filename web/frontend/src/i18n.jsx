@@ -178,7 +178,9 @@ const translations = {
     passwordTooShort: 'A jelszónak legalább 6 karakteresnek kell lennie',
     logoutSection: 'Kijelentkezés',
     logoutDesc: 'Biztonsági okokból jelentkezz ki, ha végzettél.',
-    logoutButton: '🚪 Kijelentkezés',
+    logoutButton: 'Kijelentkezés',
+    resetToDefault: 'Visszaállítás alapértelmezettre',
+    promptModified: 'Módosítva',
     deployTitle: 'Railway telepítési útmutató',
     deployDesc: 'A következő környezeti változókat kell beállítani Railway-en:',
 
@@ -380,7 +382,9 @@ const translations = {
     passwordTooShort: 'Password must be at least 6 characters',
     logoutSection: 'Log Out',
     logoutDesc: 'Log out when you are done for security.',
-    logoutButton: '🚪 Log Out',
+    logoutButton: 'Log Out',
+    resetToDefault: 'Reset to default',
+    promptModified: 'Modified',
     deployTitle: 'Railway Deployment Guide',
     deployDesc: 'Set the following environment variables on Railway:',
 
