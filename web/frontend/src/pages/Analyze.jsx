@@ -287,7 +287,26 @@ function ParseLogPanel({ result }) {
 function AnalysisResult({ result, employees, onClose, onSidebarData }) {
   const { t } = useLang();
   const [showPrint, setShowPrint] = React.useState(false);
-  const { employees: empResults = [], violations = [], suggestions = [], summary, narrative } = result;
+  const { employees: empResults = [], summary, narrative } = result;
+
+  // Derive violations & suggestions directly from the AI narrative (ENGLISH
+  // section). This keeps the bottom panels in sync with the collapsible boxes
+  // and works regardless of what the server arrays contain.
+  const { violations, suggestions } = React.useMemo(() => {
+    const enRaw = (narrative || '').match(/===\s*ENGLISH\s*===([\s\S]*?)(?:===|$)/i)?.[1] || '';
+    const block = (key) => {
+      const m = enRaw.match(new RegExp(`\\[${key}\\]([\\s\\S]*?)(?=\\[[^\\]]+\\]|$)`, 'i'));
+      return (m?.[1] || '').split('\n')
+        .map((l) => l.replace(/^[•\-]\s*/, '').trim())
+        .filter((l) => l.length > 3 && !/^\[.*\]$/.test(l));
+    };
+    let v = block('DAILY ISSUES');
+    let s = block('SUGGESTIONS');
+    // Fall back to server-provided arrays if narrative parsing yields nothing
+    if (v.length === 0 && Array.isArray(result.violations)) v = result.violations;
+    if (s.length === 0 && Array.isArray(result.suggestions)) s = result.suggestions;
+    return { violations: v, suggestions: s };
+  }, [narrative, result.violations, result.suggestions]);
 
   React.useEffect(() => {
     if (onSidebarData) onSidebarData({ aiUsage: result.aiUsage, parseLog: result.parseLog });
@@ -554,23 +573,22 @@ export default function Analyze({ onSidebarData }) {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [empListOpen, setEmpListOpen] = useState(false);
-  const [progressStep, setProgressStep] = useState('');
+  const [progressIdx, setProgressIdx] = useState(0);
   const fileRef = useRef();
 
   const PROGRESS_STEPS = [
-    t('analyzeProgressStep1') || 'Reading PDF…',
-    t('analyzeProgressStep2') || 'Parsing schedule…',
-    t('analyzeProgressStep3') || 'Comparing hours to contracts…',
-    t('analyzeProgressStep4') || 'Generating analysis…',
+    t('analyzeProgressStep1'),
+    t('analyzeProgressStep2'),
+    t('analyzeProgressStep3'),
+    t('analyzeProgressStep4'),
   ];
 
   useEffect(() => {
-    if (!loading) { setProgressStep(''); return; }
-    let i = 0;
-    setProgressStep(PROGRESS_STEPS[0]);
+    if (!loading) { setProgressIdx(0); return; }
+    setProgressIdx(0);
+    // Advance through steps, holding on the last (AI) step which takes longest
     const id = setInterval(() => {
-      i = (i + 1) % PROGRESS_STEPS.length;
-      setProgressStep(PROGRESS_STEPS[i]);
+      setProgressIdx((i) => Math.min(i + 1, PROGRESS_STEPS.length - 1));
     }, 2200);
     return () => clearInterval(id);
   }, [loading]);
@@ -632,14 +650,6 @@ export default function Analyze({ onSidebarData }) {
 
   return (
     <div>
-      <style>{`
-        @keyframes analyzeProgressMove {
-          0% { transform: translateX(-100%); }
-          50% { transform: translateX(150%); }
-          100% { transform: translateX(-100%); }
-        }
-        .analyze-progress-bar { position: relative; }
-      `}</style>
       <div className="page-header">
         <h1 className="page-title">{t('analyzePage')}</h1>
         <p className="page-subtitle">{t('analyzeSubtitle')}</p>
@@ -746,17 +756,37 @@ export default function Analyze({ onSidebarData }) {
                 {loading ? <><span className="spinner" />{t('analyzeRunning')}</> : t('analyzeRunButton')}
               </button>
               {loading && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ height: 8, borderRadius: 4, background: 'var(--gray-200)', overflow: 'hidden' }}>
-                    <div className="analyze-progress-bar" style={{
-                      height: '100%',
-                      width: '40%',
-                      borderRadius: 4,
-                      background: 'var(--primary)',
-                      animation: 'analyzeProgressMove 1.4s ease-in-out infinite',
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ height: 6, borderRadius: 4, background: 'var(--gray-200)', overflow: 'hidden', marginBottom: 14 }}>
+                    <div style={{
+                      height: '100%', borderRadius: 4, background: 'var(--primary)',
+                      width: `${((progressIdx + 1) / PROGRESS_STEPS.length) * 100}%`,
+                      transition: 'width .5s ease',
                     }} />
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 8 }}>{progressStep}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    {PROGRESS_STEPS.map((step, i) => {
+                      const done = i < progressIdx;
+                      const active = i === progressIdx;
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: done || active ? 1 : 0.4, transition: 'opacity .3s' }}>
+                          <span style={{
+                            width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 700,
+                            background: done ? 'var(--success)' : active ? 'var(--primary)' : 'var(--gray-200)',
+                            color: done || active ? 'white' : 'var(--gray-500)',
+                          }}>
+                            {done ? '✓' : active ? <span className="spinner" style={{ width: 11, height: 11, borderWidth: 2 }} /> : i + 1}
+                          </span>
+                          <span style={{
+                            fontSize: 13, color: active ? 'var(--gray-900)' : 'var(--gray-500)',
+                            fontWeight: active ? 600 : 400,
+                          }}>{step}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

@@ -58,6 +58,10 @@ const translations = {
     analyzeAiWait: 'Az AI elemzi a beosztást... Ez 10-30 másodpercet vehet igénybe.',
     analyzeNoPdf: 'Válassz ki egy PDF fájlt',
     analyzeNoEmp: 'Előbb add hozzá az alkalmazottakat a Munkavállalók oldalon',
+    analyzeProgressStep1: '📄 PDF beolvasása…',
+    analyzeProgressStep2: '🗂️ Beosztás feldolgozása…',
+    analyzeProgressStep3: '⚖️ Órák összevetése a szerződésekkel…',
+    analyzeProgressStep4: '🤖 AI elemzés készítése…',
     analyzeContractedHours: 'h/hét',
     analyzeNewAnalysis: '← Új elemzés',
 
@@ -262,6 +266,10 @@ const translations = {
     analyzeAiWait: 'The AI is analysing the schedule… This may take 10–30 seconds.',
     analyzeNoPdf: 'Please select a PDF file',
     analyzeNoEmp: 'Add employees on the Employees page first',
+    analyzeProgressStep1: '📄 Reading PDF…',
+    analyzeProgressStep2: '🗂️ Parsing schedule…',
+    analyzeProgressStep3: '⚖️ Comparing hours to contracts…',
+    analyzeProgressStep4: '🤖 Generating AI analysis…',
     analyzeContractedHours: 'h/week',
     analyzeNewAnalysis: '← New Analysis',
 
