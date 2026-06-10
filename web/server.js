@@ -1145,6 +1145,15 @@ NOT FOUND IN SCHEDULE (${notFound.length}): ${notFound.map(e => e.name).join(', 
 
     analysis.narrative = narrativeMessage.content[0].text.trim();
 
+    // Extract suggestions and violations from AI narrative to populate legacy arrays
+    const enBlock = analysis.narrative.match(/===\s*ENGLISH\s*===([\s\S]*?)(?:===|$)/i)?.[1] || '';
+    const extractBullets = (text, key) => {
+      const block = text.match(new RegExp(`\\[${key}\\]([\\s\\S]*?)(?=\\[|$)`, 'i'))?.[1] || '';
+      return block.split('\n').map(l => l.replace(/^[•\-]\s*/,'').trim()).filter(l => l.length > 3);
+    };
+    analysis.suggestions = extractBullets(enBlock, 'SUGGESTIONS');
+    analysis.violations  = extractBullets(enBlock, 'DAILY ISSUES');
+
     // Estimated AI cost for this call (Claude Sonnet pricing: $3 / MTok input, $15 / MTok output — approximate, check console.anthropic.com for exact current rates)
     const usage = narrativeMessage.usage || {};
     const inputTokens = usage.input_tokens || 0;
