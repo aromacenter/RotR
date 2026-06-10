@@ -445,34 +445,29 @@ function AnalysisResult({ result, employees, onClose }) {
         return (
           <div style={{ marginBottom:20 }}>
 
-            {/* Budget summary — always visible, not collapsible */}
-            <div className="card" style={{ marginBottom:16, borderLeft:`4px solid ${result.budgetStatus==='over'?'#ef4444':result.budgetStatus==='under'?'#f59e0b':'#10b981'}` }}>
-              <div className="card-header" style={{ background: result.budgetStatus==='over'?'#fff1f2':result.budgetStatus==='under'?'#fffbeb':'#f0fdf4' }}>
-                <div className="card-title" style={{ color: result.budgetStatus==='over'?'#991b1b':result.budgetStatus==='under'?'#92400e':'#065f46' }}>
-                  💰 {result.budgetStatus==='over'?'Túlköltés!':result.budgetStatus==='under'?'Hiány':'Büdzsé — OK'}
-                </div>
-              </div>
-              <div className="card-body">
-                <div style={{ display:'flex', gap:24, flexWrap:'wrap', marginBottom: enSec['BUDGET']||huSec['BÜDZSÉ'] ? 12 : 0 }}>
-                  <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>ENGEDÉLYEZETT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.approvedBudget ?? 0} h</div></div>
-                  <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>FELHASZNÁLT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.totalScheduledHours ?? 0} h</div></div>
-                  <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>KÜLÖNBSÉG</div>
-                    <div style={{ fontSize:22, fontWeight:800, color: result.budgetStatus==='over'?'#dc2626':result.budgetStatus==='under'?'#d97706':'#16a34a' }}>
-                      {(result.budgetDifference??0)>0?'+':''}{(result.budgetDifference??0).toFixed(1)} h
-                    </div>
+            {/* Budget summary — collapsible, closed by default */}
+            <Collapsible
+              title={`💰 Büdzsé — ${result.budgetStatus==='over'?'Túlköltés!':result.budgetStatus==='under'?'Hiány':'OK'}`}
+              accent={result.budgetStatus==='over'?'#ef4444':result.budgetStatus==='under'?'#f59e0b':'#10b981'}
+              bg={result.budgetStatus==='over'?'#fff1f2':result.budgetStatus==='under'?'#fffbeb':'#f0fdf4'}
+              defaultOpen={false}
+            >
+              <div style={{ display:'flex', gap:24, flexWrap:'wrap', marginBottom: enSec['BUDGET']||huSec['BÜDZSÉ'] ? 12 : 0 }}>
+                <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>ENGEDÉLYEZETT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.approvedBudget ?? 0} h</div></div>
+                <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>FELHASZNÁLT</div><div style={{ fontSize:22, fontWeight:800, color:'#0f172a' }}>{result.totalScheduledHours ?? 0} h</div></div>
+                <div><div style={{ fontSize:11, color:'#64748b', fontWeight:600 }}>KÜLÖNBSÉG</div>
+                  <div style={{ fontSize:22, fontWeight:800, color: result.budgetStatus==='over'?'#dc2626':result.budgetStatus==='under'?'#d97706':'#16a34a' }}>
+                    {(result.budgetDifference??0)>0?'+':''}{(result.budgetDifference??0).toFixed(1)} h
                   </div>
                 </div>
-                {(enSec['BUDGET']||huSec['BÜDZSÉ']) && <BulletList text={enSec['BUDGET']} />}
               </div>
-            </div>
+              {(enSec['BUDGET']||huSec['BÜDZSÉ']) && <BulletList text={enSec['BUDGET']} />}
+            </Collapsible>
 
-            {/* Overtime table */}
+            {/* Overtime table — collapsible, closed by default */}
             {overEmps.length > 0 && (
-              <div className="card" style={{ marginBottom:16, borderLeft:'4px solid #f59e0b' }}>
-                <div className="card-header" style={{ background:'#fffbeb' }}>
-                  <div className="card-title" style={{ color:'#92400e' }}>▲ Túlórák részletei</div>
-                </div>
-                <div className="card-body" style={{ padding:0 }}>
+              <Collapsible title={`▲ Túlórák részletei (${overEmps.length} fő)`} accent="#f59e0b" bg="#fffbeb" defaultOpen={false}>
+                <div style={{ padding:0, margin:-12 }}>
                   <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                     <thead>
                       <tr style={{ background:'#fef3c7' }}>
@@ -494,7 +489,7 @@ function AnalysisResult({ result, employees, onClose }) {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </Collapsible>
             )}
 
             {/* English analysis box */}

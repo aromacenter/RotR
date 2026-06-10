@@ -1091,9 +1091,9 @@ app.post('/api/analyze', requireAuth, upload.array('pdf', 7), async (req, res) =
 
       return {
         day,
-        keyholder:  { ok: keyholders.length >= 1, count: keyholders.length, required: 1, who: keyholders.map(e=>e.name) },
-        till:       { ok: tillStaff.length >= 2,  count: tillStaff.length,  required: 2, who: tillStaff.map(e=>e.name) },
-        floor:      { ok: floorStaff.length >= 1, count: floorStaff.length, required: 1, who: floorStaff.map(e=>e.name) },
+        keyholder:  { ok: keyholders.length >= 1, count: keyholders.length, required: 1, who: keyholders.map(e=>e.name), applicable: true },
+        till:       { ok: tillStaff.length >= 2,  count: tillStaff.length,  required: 2, who: tillStaff.map(e=>e.name), applicable: true },
+        floor:      { ok: floorStaff.length >= 1, count: floorStaff.length, required: 1, who: floorStaff.map(e=>e.name), applicable: true },
         // Night shift: applicable only when a night shift exists.
         // Rule: at least 1 Keyholder must be present on the night shift.
         nightReplen: hasNightShift
