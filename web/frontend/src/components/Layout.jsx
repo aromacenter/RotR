@@ -110,15 +110,15 @@ export default function Layout({ page, onNavigate, username, onLogout, sidebarDa
               <button
                 onClick={onLogout}
                 style={{
-                  width: '100%', background: 'rgba(239,68,68,.15)', color: '#fca5a5',
-                  border: '1px solid rgba(239,68,68,.25)', borderRadius: 8,
-                  padding: '7px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  transition: 'all .15s',
+                  width: '100%', background: 'transparent', color: '#9ca3af',
+                  border: '1px solid rgba(255,255,255,.12)', borderRadius: 8,
+                  padding: '7px 10px', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  transition: 'all .15s', letterSpacing: '.01em',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.28)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,.15)'; }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.18)'; e.currentTarget.style.color = '#fca5a5'; e.currentTarget.style.borderColor = 'rgba(239,68,68,.35)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.12)'; }}
               >
-                🚪 {t('logoutButton')}
+                {t('logoutButton')}
               </button>
             </div>
           )}

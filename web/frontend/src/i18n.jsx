@@ -14,6 +14,19 @@ const translations = {
     navParseLog: 'Parse Log',
     overtimeDetails: 'Túlórák részletei',
 
+    // Coverage matrix
+    coverageCheck: 'Lefedettség ellenőrzése',
+    coverageLegendOk: 'OK',
+    coverageLegendFail: 'hiány',
+    coverageLegendNa: 'nincs éjszakai műszak',
+    coverageKeyholder: 'Keyholder',
+    coverageTill: 'Till Staff',
+    coverageFloor: 'Floor Staff',
+    coverageNight: 'Éjszakai KH',
+    coverageNightSub: 'keyholder',
+    dayAbbr_Sun: 'Vas', dayAbbr_Mon: 'Hét', dayAbbr_Tue: 'Kedd',
+    dayAbbr_Wed: 'Sze', dayAbbr_Thu: 'Csüt', dayAbbr_Fri: 'Pén', dayAbbr_Sat: 'Szo',
+
     // Login
     loginTitle: 'RotR',
     loginSubtitle: 'rota analysing software',
@@ -202,6 +215,19 @@ const translations = {
     navSettings: 'Settings',
     navParseLog: 'Parse Log',
     overtimeDetails: 'Overtime details',
+
+    // Coverage matrix
+    coverageCheck: 'Coverage Check',
+    coverageLegendOk: 'OK',
+    coverageLegendFail: 'missing',
+    coverageLegendNa: 'no night shift',
+    coverageKeyholder: 'Keyholder',
+    coverageTill: 'Till Staff',
+    coverageFloor: 'Floor Staff',
+    coverageNight: 'Night KH',
+    coverageNightSub: 'keyholder',
+    dayAbbr_Sun: 'Sun', dayAbbr_Mon: 'Mon', dayAbbr_Tue: 'Tue',
+    dayAbbr_Wed: 'Wed', dayAbbr_Thu: 'Thu', dayAbbr_Fri: 'Fri', dayAbbr_Sat: 'Sat',
 
     // Login
     loginTitle: 'RotR',

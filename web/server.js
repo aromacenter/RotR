@@ -1228,6 +1228,10 @@ app.use((err, req, res, _next) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
+// On startup: clear any stored analysis_prompt so the updated DEFAULT is always used.
+// This ensures prompt improvements in code are picked up without manual DB edits.
+db.prepare('DELETE FROM settings WHERE key = ?').run('analysis_prompt');
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Rota Planner fut: http://localhost:${PORT}`);

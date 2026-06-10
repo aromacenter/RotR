@@ -318,23 +318,19 @@ function AnalysisResult({ result, employees, onClose, onSidebarData }) {
       {/* ── Coverage Matrix ───────────────────────────────────────────────── */}
       {Array.isArray(result.coverageMatrix) && result.coverageMatrix.length > 0 && (() => {
         const matrix = result.coverageMatrix;
-        const DAY_HU = { Sun:'Vas', Mon:'Hét', Tue:'Kedd', Wed:'Sze', Thu:'Csüt', Fri:'Pén', Sat:'Szo' };
-        const DAY_FULL_HU = { Sun:'Vasárnap', Mon:'Hétfő', Tue:'Kedd', Wed:'Szerda', Thu:'Csütörtök', Fri:'Péntek', Sat:'Szombat' };
-        const dayAbbr = d => { const m=(d||'').match(/^(\w{3})/); return m?(DAY_HU[m[1]]||m[1]):d; };
-        const dayFull = d => { const m=(d||'').match(/^(\w{3})/); return m?(DAY_FULL_HU[m[1]]||m[1]):d; };
+        const dayAbbr = d => { const m=(d||'').match(/^(\w{3})/); return m?(t(`dayAbbr_${m[1]}`) || m[1]):d; };
         const dayDate = d => (d||'').replace(/^\w+\s*/,'');
         const rows = [
-          { key:'keyholder',   icon:'🔑', label:'Keyholder',    sub:'min. 1' },
-          { key:'till',        icon:'🛒', label:'Till Staff',    sub:'min. 2' },
-          { key:'floor',       icon:'🏪', label:'Floor Staff',   sub:'min. 1' },
-          { key:'nightReplen', icon:'🌙', label:'Éjszakai KH',   sub:'keyholder' },
+          { key:'keyholder',   icon:'🔑', label:t('coverageKeyholder'), sub:'min. 1' },
+          { key:'till',        icon:'🛒', label:t('coverageTill'),       sub:'min. 2' },
+          { key:'floor',       icon:'🏪', label:t('coverageFloor'),      sub:'min. 1' },
+          { key:'nightReplen', icon:'🌙', label:t('coverageNight'),      sub:t('coverageNightSub') },
         ];
         const anyViolation = matrix.some(d => rows.some(r => { const c=d[r.key]||{}; return c.applicable && !c.ok; }));
 
-        const Cell = ({ cell, isNight }) => {
+        const Cell = ({ cell }) => {
           if (!cell) return <td style={tdBase('#f8fafc')}>—</td>;
           if (!cell.applicable) {
-            // No night shift this day → strikethrough dash
             return (
               <td style={tdBase('#f8fafc')}>
                 <span style={{ fontSize:15, color:'#cbd5e1', textDecoration:'line-through' }}>—</span>
@@ -342,7 +338,7 @@ function AnalysisResult({ result, employees, onClose, onSidebarData }) {
             );
           }
           const bg = cell.ok ? '#f0fdf4' : '#fff1f2';
-          const tooltip = (cell.who||[]).join(', ') || 'senki';
+          const tooltip = (cell.who||[]).join(', ') || '—';
           return (
             <td style={tdBase(bg)} title={tooltip}>
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
@@ -360,17 +356,17 @@ function AnalysisResult({ result, employees, onClose, onSidebarData }) {
           <div className="card" style={{ marginBottom:20, overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,.07)' }}>
             <div style={{ padding:'12px 16px', background: anyViolation?'#fff1f2':'#f0fdf4', borderBottom:'1px solid #e8ecf0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <span style={{ fontWeight:700, fontSize:14, color: anyViolation?'#991b1b':'#065f46' }}>
-                {anyViolation?'⚠️':'✅'} Lefedettség ellenőrzése
+                {anyViolation?'⚠️':'✅'} {t('coverageCheck')}
               </span>
-              <span style={{ fontSize:11, color:'#94a3b8' }}>Zöld ✅ = OK · Piros ❌ = hiány · — = nincs éjszakai műszak</span>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>✅ = {t('coverageLegendOk')} · ❌ = {t('coverageLegendFail')} · — = {t('coverageLegendNa')}</span>
             </div>
             <div style={{ overflowX:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                 <thead>
                   <tr>
-                    <th style={{ padding:'10px 14px', textAlign:'left', background:'#f8fafc', borderBottom:'2px solid #dde3ea', borderRight:'1px solid #e8ecf0', fontWeight:700, color:'#475569', minWidth:150, whiteSpace:'nowrap' }}>Szabály</th>
+                    <th style={{ padding:'10px 14px', textAlign:'left', background:'#f8fafc', borderBottom:'2px solid #dde3ea', borderRight:'1px solid #e8ecf0', fontWeight:700, color:'#475569', minWidth:150, whiteSpace:'nowrap' }}>{t('resultStatus')}</th>
                     {matrix.map(d => (
-                      <th key={d.day} title={dayFull(d.day)} style={{ padding:'8px 6px', textAlign:'center', background:'#f8fafc', borderBottom:'2px solid #dde3ea', borderRight:'1px solid #e8ecf0', fontWeight:700, color:'#374151', whiteSpace:'nowrap' }}>
+                      <th key={d.day} style={{ padding:'8px 6px', textAlign:'center', background:'#f8fafc', borderBottom:'2px solid #dde3ea', borderRight:'1px solid #e8ecf0', fontWeight:700, color:'#374151', whiteSpace:'nowrap' }}>
                         <div style={{ fontSize:13 }}>{dayAbbr(d.day)}</div>
                         <div style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginTop:1 }}>{dayDate(d.day)}</div>
                       </th>
@@ -384,7 +380,7 @@ function AnalysisResult({ result, employees, onClose, onSidebarData }) {
                         {row.icon} {row.label}
                         <div style={{ fontSize:10, fontWeight:400, color:'#94a3b8', marginTop:1 }}>{row.sub}</div>
                       </td>
-                      {matrix.map(d => <Cell key={d.day} cell={d[row.key]} isNight={row.key==='nightReplen'} />)}
+                      {matrix.map(d => <Cell key={d.day} cell={d[row.key]} />)}
                     </tr>
                   ))}
                 </tbody>
